@@ -103,7 +103,95 @@ function render(){toolbar();document.getElementById('app').innerHTML=({inicio:re
 function navigate(to){route=to;location.hash=to;document.getElementById('sidebar').classList.remove('open');render()}
 function modal(title,fields,submitLabel,callback){const content=document.getElementById('modal-content');content.innerHTML=`<h2>${safe(title)}</h2><div class="forms">${fields.map(f=>`<label class="form-field ${f.full?'full':''}"><span>${safe(f.label)}</span>${f.type==='select'?`<select name="${f.name}">${f.options.map(([v,l])=>`<option value="${safe(v)}" ${String(f.value??'')===String(v)?'selected':''}>${safe(l)}</option>`).join('')}</select>`:`<input name="${f.name}" type="${f.type||'text'}" value="${safe(f.value??'')}" ${f.required?'required':''} ${f.placeholder?`placeholder="${safe(f.placeholder)}"`:''}>`}</label>`).join('')}</div><div class="modal-actions"><button class="btn" value="cancel" type="button" id="cancel-modal">Cancelar</button><button class="btn primary" type="submit">${safe(submitLabel)}</button></div>`;const dlg=document.getElementById('modal');const f=dlg.querySelector('form');f.onsubmit=(e)=>{e.preventDefault();const v=Object.fromEntries(new FormData(f).entries());const res=callback(v);if(res!==false){dlg.close();save();render()}};content.querySelector('#cancel-modal').onclick=()=>dlg.close();dlg.showModal()}
 function addEditPerson(pid){const p=current('employees').find(x=>x.id===pid);modal(p?'Editar conserje':'Agregar conserje',[{name:'name',label:'Nombre completo',value:p?.name,required:true}],p?'Guardar':'Agregar',v=>{if(!v.name.trim())return false;if(p)p.name=v.name.trim();else state.employees.push({id:id(),buildingId:state.activeId,name:v.name.trim(),active:true});toast('Conserje guardado')})}
-function addEditPoint(pid){const p=current('points').find(x=>x.id===pid);modal(p?'Editar punto RFID':'Agregar punto RFID',[{name:'name',label:'Nombre del punto',value:p?.name,required:true},{name:'code',label:'Código RFID (dejar vacío si se desconoce)',value:p?.code||'',placeholder:'Ej. 0445'}],p?'Guardar':'Agregar',v=>{const code=v.code.trim().toUpperCase(),name=v.name.trim();if(!name)return false;if(code&&current('points').some(q=>q.id!==pid&&q.active&&q.code.toUpperCase()===code)){toast('Ese código RFID ya está asignado a otro punto activo');return false}if(p)Object.assign(p,{name,code});else state.points.push({id:id(),buildingId:state.activeId,name,code,active:true});toast('Punto guardado')})}
+function addEditPoint(pid){
+ const p=current('points').find(x=>x.id===pid);
+ modal(p?'Editar punto RFID':'Agregar punto RFID',
+  [{name:'name',label:'Nombre del punto',value:p?.name,required:true},
+   {name:'code',label:'Código RFID (dejar vacío si se desconoce)',value:p?.code||'',placeholder:'Ej. 0445'}],
+  p?'Guardar':'Agregar',v=>{
+   const code=v.code.trim().toUpperCase(),name=v.name.trim();
+   if(!name)return false;
+   if(code&&current('points').some(q=>q.id!==pid&&q.active&&q.code.toUpperCase()===code)){
+     toast('Ese código RFID ya está asignado a otro punto activo');return false;
+   }
+   if(p)Object.assign(p,{name,code});else state.points.push({id:id(),buildingId:state.activeId,name,code,active:true});
+   toast('Punto guardado');
+  });
+ const input=document.querySelector('#modal-content input[name="code"]');
+ if(!input)return;
+ input.dataset.pid=pid||'';
+ const label=input.closest('.form-field');
+ const wrap=document.createElement('div');wrap.className='rfid-code-input';
+ input.parentNode.insertBefore(wrap,input);wrap.appendChild(input);
+ const btn=document.createElement('button');btn.type='button';btn.className='btn rfid-read-button';btn.textContent='Leer';
+ btn.setAttribute('aria-label','Leer código RFID mediante lector USB');wrap.appendChild(btn);
+ const hint=document.createElement('p');hint.className='rfid-hint';
+ hint.setAttribute('role','status');hint.setAttribute('aria-live','polite');
+ hint.textContent='Conecta el lector JWM por USB. La captura directa es experimental hasta validar su protocolo.';
+ label.appendChild(hint);
+ btn.addEventListener('click',()=>tryReadRFID(input,btn,hint));
+}
+/**
+ * Lectura pasiva y no destructiva por Web Serial. No transmite comandos al lector.
+ * El WM-5000V1 puede guardar internamente las lecturas sin enviarlas en vivo;
+ * en ese caso será necesario integrar el auxiliar Windows con el protocolo JWM.
+ * No atribuir a un tag bytes binarios no identificados.
+ */
+async function tryReadRFID(input,btn,hint){
+ if(!('serial' in navigator)){
+   hint.textContent='Para probar la conexión USB abre esta web desde Chrome o Edge de escritorio (HTTPS). El lector JWM puede requerir el auxiliar de Windows.';
+   return;
+ }
+ let port=null,reader=null,timeout=null,candidate=null,received=0;
+ btn.disabled=true;btn.textContent='Leyendo…';
+ hint.textContent='Selecciona el dispositivo Silicon Labs CP210x (COM) y acerca el JWM al chip. No abras JWM simultáneamente.';
+ try{
+   port=await navigator.serial.requestPort({filters:[{usbVendorId:0x10C4,usbProductId:0xEA60}]});
+   await port.open({baudRate:9600,dataBits:8,stopBits:1,parity:'none',flowControl:'none'});
+   if(!port.readable)throw new Error('El dispositivo no permite lectura de datos serie.');
+   reader=port.readable.getReader();
+   hint.textContent='Conexión USB abierta. Esperando una lectura en vivo durante 15 segundos (sin enviar comandos).';
+   const decoder=new TextDecoder();let pending='';
+   timeout=setTimeout(()=>{if(reader)reader.cancel().catch(()=>{});},15000);
+   while(!candidate){
+     const result=await reader.read();
+     if(result.done)break;
+     const chunk=result.value;
+     if(!chunk||!chunk.length)continue;
+     received+=chunk.length;
+     pending+=decoder.decode(chunk,{stream:true});
+     // Solo aceptar tramas ASCII delimitadas con un identificador hexadecimal.
+     // No interpretar paquetes binarios arbitrarios como si fueran códigos RFID.
+     const segments=pending.replace(/[\x02\x03]/g,'\n').split(/[\r\n]/);
+     pending=segments.pop()||'';
+     for(const part of segments){
+       const possible=part.trim().toUpperCase();
+       if(/^[0-9A-F]{4,16}$/.test(possible)){candidate=possible;break;}
+     }
+     if(pending.length>256)pending=pending.slice(-256);
+   }
+   if(candidate){
+     if(input.isConnected){
+       const repeated=current('points').find(q=>q.active&&q.code.toUpperCase()===candidate&&q.id!==(input.dataset.pid||''));
+       input.value=candidate;
+       hint.textContent=repeated?'Código candidato '+candidate+' recibido, pero ya existe en '+repeated.name+'. Revisa antes de guardar.':'Código candidato recibido: '+candidate+'. Confirma que corresponde al chip antes de guardar.';
+     }
+   }else if(received){
+     hint.textContent='El puerto entregó '+received+' bytes, pero no se identificó un código RFID en formato ASCII verificable. El WM-5000V1 requiere integrar su protocolo en el auxiliar Windows.';
+   }else{
+     hint.textContent='No se recibieron códigos en vivo. El WM-5000V1 puede almacenar la lectura internamente; será necesario completar la descarga mediante el auxiliar Windows.';
+   }
+ }catch(e){
+   if(e.name==='NotFoundError')hint.textContent='No seleccionaste ningún dispositivo.';
+   else if(e.name==='NetworkError'||e.name==='InvalidStateError')hint.textContent='No se pudo abrir el puerto. Verifica la conexión USB y cierra el programa JWM si está abierto.';
+   else hint.textContent='No fue posible leer el lector USB: '+(e.message||String(e));
+ }finally{
+   if(timeout)clearTimeout(timeout);
+   if(reader){try{await reader.cancel()}catch(_){}try{reader.releaseLock()}catch(_){}}
+   if(port){try{await port.close()}catch(_){}}
+   btn.disabled=false;btn.textContent='Leer';
+ }
+}
 function addEditBuilding(bid){const b=state.buildings.find(x=>x.id===bid);modal(b?'Editar edificio':'Agregar edificio',[{name:'name',label:'Nombre del edificio',value:b?.name,required:true}],b?'Guardar':'Agregar',v=>{if(!v.name.trim())return false;if(b)b.name=v.name.trim();else{const newId=id();state.buildings.push({id:newId,name:v.name.trim(),demo:false});state.activeId=newId}toast('Edificio guardado')})}
 function addEditDevice(did){const d=current('devices').find(x=>x.id===did);modal(d?'Editar lector':'Agregar lector',[{name:'model',label:'Modelo del lector',value:d?.model||'JWM 5000V1',required:true},{name:'serial',label:'Número de equipo',value:d?.serial,required:true}],d?'Guardar':'Agregar',v=>{if(!v.model.trim()||!v.serial.trim())return false;if(current('devices').some(q=>q.id!==did&&q.serial===v.serial.trim())){toast('Ese equipo ya está registrado');return false}if(d)Object.assign(d,{model:v.model.trim(),serial:v.serial.trim()});else state.devices.push({id:id(),buildingId:state.activeId,model:v.model.trim(),serial:v.serial.trim(),active:true});toast('Lector guardado')})}
 function addEditRound(sid){const s=current('schedules').find(x=>x.id===sid);const pts=activePoints();const fields=[{name:'type',label:'Tipo de día',type:'select',value:s?.type||'weekday',options:Object.entries(dayTitle)},{name:'turn',label:'Nombre del turno',value:s?.turn||'Mañana',required:true},{name:'start',label:'Hora de inicio',type:'time',value:s?.start||'10:00',required:true},{name:'end',label:'Hora de término',type:'time',value:s?.end||'11:00',required:true},{name:'offset',label:'Día de ejecución',type:'select',value:String(s?.offset??0),options:[['0','El mismo día'],['1','Día siguiente']]},{name:'employeeId',label:'Conserje responsable',type:'select',value:s?.employeeId||'',options:[['','Por asignar'],...current('employees').filter(x=>x.active).map(p=>[p.id,p.name])]}];
