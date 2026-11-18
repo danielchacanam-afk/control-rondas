@@ -119,7 +119,6 @@ function addEditPoint(pid){
   });
  const input=document.querySelector('#modal-content input[name="code"]');
  if(!input)return;
- input.dataset.pid=pid||'';
  const label=input.closest('.form-field');
  const wrap=document.createElement('div');wrap.className='rfid-code-input';
  input.parentNode.insertBefore(wrap,input);wrap.appendChild(input);
@@ -127,88 +126,29 @@ function addEditPoint(pid){
  btn.setAttribute('aria-label','Leer código RFID mediante lector USB');wrap.appendChild(btn);
  const hint=document.createElement('p');hint.className='rfid-hint';
  hint.setAttribute('role','status');hint.setAttribute('aria-live','polite');
- hint.textContent='Conecta el lector JWM por USB. La captura directa es experimental hasta validar su protocolo.';
+ hint.textContent='Conecta el lector JWM por USB y cierra el programa de JWM antes de pulsar Leer.';
  label.appendChild(hint);
- btn.addEventListener('click',()=>tryReadRFID(input,btn,hint));
+ btn.addEventListener('click',()=>tryReadRFID(btn,hint));
 }
-/**
- * Lectura pasiva y no destructiva por Web Serial. No transmite comandos al lector.
- * El WM-5000V1 puede guardar internamente las lecturas sin enviarlas en vivo;
- * en ese caso será necesario integrar el auxiliar Windows con el protocolo JWM.
- * No atribuir a un tag bytes binarios no identificados.
- */
-async function tryReadRFID(input,btn,hint){
- if(!('serial' in navigator)){
-   hint.textContent='Abre esta página en Chrome o Edge de escritorio con HTTPS. La lectura directa del JWM sigue siendo experimental.';
-   return;
- }
- let port=null,reader=null,timeout=null,candidate=null,received=0,breakCount=0,stopped=false;
- btn.disabled=true;btn.textContent='Leyendo…';
- hint.textContent='Selecciona Silicon Labs CP210x (COM7 si mantiene ese número). Cierra JWM antes de continuar.';
- try{
-   port=await navigator.serial.requestPort({filters:[{usbVendorId:0x10C4,usbProductId:0xEA60}]});
-   await port.open({baudRate:9600,dataBits:8,stopBits:1,parity:'none',flowControl:'none'});
-   if(!port.readable)throw new Error('El puerto no permite recibir datos.');
-   hint.textContent='Puerto USB abierto. Escuchando durante 15 segundos sin enviar comandos ni borrar registros.';
-   const decoder=new TextDecoder();let pending='';
-   timeout=setTimeout(()=>{stopped=true;if(reader)reader.cancel().catch(()=>{});},15000);
-   // El navegador puede informar BREAK como error de lectura recuperable.
-   // Reintentar pocas veces sin enviar ninguna instrucción al dispositivo.
-   while(!stopped&&!candidate&&port.readable){
-     reader=port.readable.getReader();
-     try{
-       while(!stopped&&!candidate){
-         const result=await reader.read();
-         if(result.done){stopped=true;break;}
-         const chunk=result.value;
-         if(!chunk?.length)continue;
-         received+=chunk.length;
-         pending+=decoder.decode(chunk,{stream:true});
-         const segments=pending.replace(/[\x02\x03]/g,'\n').split(/[\r\n]/);
-         pending=segments.pop()||'';
-         for(const part of segments){
-           const possible=part.trim().toUpperCase();
-           if(/^[0-9A-F]{4,16}$/.test(possible)){candidate=possible;break;}
-         }
-         if(pending.length>256)pending=pending.slice(-256);
-       }
-     }catch(e){
-       if(e.name==='BreakError'||/break received/i.test(e.message||'')){
-         breakCount++;
-         hint.textContent='El puerto CP210x informa una señal BREAK, no un código RFID. Comprobando si se recupera la recepción ('+breakCount+'/3)…';
-         if(breakCount>=3)stopped=true;
-       }else{
-         throw e;
-       }
-     }finally{
-       try{reader.releaseLock()}catch(_){}
-       reader=null;
-     }
+async function tryReadRFID(button, hint) {
+ button.disabled = true;
+ button.textContent = 'Leyendo…';
+ hint.textContent = 'Selecciona el lector Silicon Labs CP210x.';
+ try {
+   await withJwmReader(({ serial }) => {
+     hint.textContent = 'Lector JWM ' + serial + ' identificado. La descarga del código RFID sigue en validación.';
+   });
+ } catch (error) {
+   if (error.name === 'NotFoundError') {
+     hint.textContent = 'No seleccionaste ningún puerto.';
+   } else if (error.name === 'NetworkError' || error.name === 'InvalidStateError') {
+     hint.textContent = 'No se pudo acceder al puerto. Verifica el USB y cierra JWM si está abierto.';
+   } else {
+     hint.textContent = error.message || 'Falló la comunicación con el lector.';
    }
-   if(candidate){
-     if(input.isConnected){
-       const repeated=current('points').find(q=>q.active&&q.code.toUpperCase()===candidate&&q.id!==(input.dataset.pid||''));
-       input.value=candidate;
-       hint.textContent=repeated?'Código candidato '+candidate+' recibido, pero ya existe en '+repeated.name+'. Revisa antes de guardar.':'Código candidato recibido: '+candidate+'. Confirma que corresponde al chip antes de guardar.';
-     }
-   }else if(breakCount){
-     hint.textContent='El dispositivo CP2102 se conectó, pero respondió con una señal BREAK. No se obtuvo el código RFID. Para recuperar códigos almacenados en el JWM 5000V1 debemos completar la integración con el auxiliar Windows.';
-   }else if(received){
-     hint.textContent='Se recibieron '+received+' bytes, pero no se pudo identificar un código RFID fiable. No se modificó ningún campo.';
-   }else{
-     hint.textContent='Puerto USB conectado, sin código RFID recibido. El JWM puede almacenar las marcaciones en su memoria; falta integrar el protocolo de descarga en el auxiliar Windows.';
-   }
- }catch(e){
-   if(e.name==='NotFoundError')hint.textContent='No seleccionaste ningún puerto.';
-   else if(e.name==='NetworkError'||e.name==='InvalidStateError')hint.textContent='No se pudo abrir el puerto. Verifica el cable y cierra JWM si está usando COM7.';
-   else if(e.name==='BreakError'||/break received/i.test(e.message||''))hint.textContent='Se detectó una señal BREAK en el puerto serie. No se obtuvo el código RFID. Hace falta validar el protocolo del JWM.';
-   else hint.textContent='No fue posible leer el puerto USB: '+(e.message||String(e));
- }finally{
-   // Restablecer la interfaz inmediatamente: cerrar un puerto con BREAK puede tardar.
-   btn.disabled=false;btn.textContent='Leer';
-   if(timeout)clearTimeout(timeout);
-   if(reader){try{await reader.cancel()}catch(_){}try{reader.releaseLock()}catch(_){}}
-   if(port){try{await port.close()}catch(_){}}
+ } finally {
+   button.disabled = false;
+   button.textContent = 'Leer';
  }
 }
 function addEditBuilding(bid){const b=state.buildings.find(x=>x.id===bid);modal(b?'Editar edificio':'Agregar edificio',[{name:'name',label:'Nombre del edificio',value:b?.name,required:true}],b?'Guardar':'Agregar',v=>{if(!v.name.trim())return false;if(b)b.name=v.name.trim();else{const newId=id();state.buildings.push({id:newId,name:v.name.trim(),demo:false});state.activeId=newId}toast('Edificio guardado')})}
