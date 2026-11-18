@@ -192,7 +192,7 @@ async function tryReadRFID(input,btn,hint){
        hint.textContent=repeated?'Código candidato '+candidate+' recibido, pero ya existe en '+repeated.name+'. Revisa antes de guardar.':'Código candidato recibido: '+candidate+'. Confirma que corresponde al chip antes de guardar.';
      }
    }else if(breakCount){
-     hint.textContent='Se reconoció el puerto USB, pero el lector devolvió señal BREAK ('+breakCount+' vez/veces). No se obtuvo el código RFID. El modelo JWM puede requerir su protocolo propio de lectura mediante el auxiliar Windows.';
+     hint.textContent='El dispositivo CP2102 se conectó, pero respondió con una señal BREAK. No se obtuvo el código RFID. Para recuperar códigos almacenados en el JWM 5000V1 debemos completar la integración con el auxiliar Windows.';
    }else if(received){
      hint.textContent='Se recibieron '+received+' bytes, pero no se pudo identificar un código RFID fiable. No se modificó ningún campo.';
    }else{
@@ -204,10 +204,11 @@ async function tryReadRFID(input,btn,hint){
    else if(e.name==='BreakError'||/break received/i.test(e.message||''))hint.textContent='Se detectó una señal BREAK en el puerto serie. No se obtuvo el código RFID. Hace falta validar el protocolo del JWM.';
    else hint.textContent='No fue posible leer el puerto USB: '+(e.message||String(e));
  }finally{
+   // Restablecer la interfaz inmediatamente: cerrar un puerto con BREAK puede tardar.
+   btn.disabled=false;btn.textContent='Leer';
    if(timeout)clearTimeout(timeout);
    if(reader){try{await reader.cancel()}catch(_){}try{reader.releaseLock()}catch(_){}}
    if(port){try{await port.close()}catch(_){}}
-   btn.disabled=false;btn.textContent='Leer';
  }
 }
 function addEditBuilding(bid){const b=state.buildings.find(x=>x.id===bid);modal(b?'Editar edificio':'Agregar edificio',[{name:'name',label:'Nombre del edificio',value:b?.name,required:true}],b?'Guardar':'Agregar',v=>{if(!v.name.trim())return false;if(b)b.name=v.name.trim();else{const newId=id();state.buildings.push({id:newId,name:v.name.trim(),demo:false});state.activeId=newId}toast('Edificio guardado')})}
