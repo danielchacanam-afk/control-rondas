@@ -139,36 +139,51 @@ function addEditPoint(pid){
  */
 async function tryReadRFID(input,btn,hint){
  if(!('serial' in navigator)){
-   hint.textContent='Para probar la conexión USB abre esta web desde Chrome o Edge de escritorio (HTTPS). El lector JWM puede requerir el auxiliar de Windows.';
+   hint.textContent='Abre esta página en Chrome o Edge de escritorio con HTTPS. La lectura directa del JWM sigue siendo experimental.';
    return;
  }
- let port=null,reader=null,timeout=null,candidate=null,received=0;
+ let port=null,reader=null,timeout=null,candidate=null,received=0,breakCount=0,stopped=false;
  btn.disabled=true;btn.textContent='Leyendo…';
- hint.textContent='Selecciona el dispositivo Silicon Labs CP210x (COM) y acerca el JWM al chip. No abras JWM simultáneamente.';
+ hint.textContent='Selecciona Silicon Labs CP210x (COM7 si mantiene ese número). Cierra JWM antes de continuar.';
  try{
    port=await navigator.serial.requestPort({filters:[{usbVendorId:0x10C4,usbProductId:0xEA60}]});
    await port.open({baudRate:9600,dataBits:8,stopBits:1,parity:'none',flowControl:'none'});
-   if(!port.readable)throw new Error('El dispositivo no permite lectura de datos serie.');
-   reader=port.readable.getReader();
-   hint.textContent='Conexión USB abierta. Esperando una lectura en vivo durante 15 segundos (sin enviar comandos).';
+   if(!port.readable)throw new Error('El puerto no permite recibir datos.');
+   hint.textContent='Puerto USB abierto. Escuchando durante 15 segundos sin enviar comandos ni borrar registros.';
    const decoder=new TextDecoder();let pending='';
-   timeout=setTimeout(()=>{if(reader)reader.cancel().catch(()=>{});},15000);
-   while(!candidate){
-     const result=await reader.read();
-     if(result.done)break;
-     const chunk=result.value;
-     if(!chunk||!chunk.length)continue;
-     received+=chunk.length;
-     pending+=decoder.decode(chunk,{stream:true});
-     // Solo aceptar tramas ASCII delimitadas con un identificador hexadecimal.
-     // No interpretar paquetes binarios arbitrarios como si fueran códigos RFID.
-     const segments=pending.replace(/[\x02\x03]/g,'\n').split(/[\r\n]/);
-     pending=segments.pop()||'';
-     for(const part of segments){
-       const possible=part.trim().toUpperCase();
-       if(/^[0-9A-F]{4,16}$/.test(possible)){candidate=possible;break;}
+   timeout=setTimeout(()=>{stopped=true;if(reader)reader.cancel().catch(()=>{});},15000);
+   // El navegador puede informar BREAK como error de lectura recuperable.
+   // Reintentar pocas veces sin enviar ninguna instrucción al dispositivo.
+   while(!stopped&&!candidate&&port.readable){
+     reader=port.readable.getReader();
+     try{
+       while(!stopped&&!candidate){
+         const result=await reader.read();
+         if(result.done){stopped=true;break;}
+         const chunk=result.value;
+         if(!chunk?.length)continue;
+         received+=chunk.length;
+         pending+=decoder.decode(chunk,{stream:true});
+         const segments=pending.replace(/[\x02\x03]/g,'\n').split(/[\r\n]/);
+         pending=segments.pop()||'';
+         for(const part of segments){
+           const possible=part.trim().toUpperCase();
+           if(/^[0-9A-F]{4,16}$/.test(possible)){candidate=possible;break;}
+         }
+         if(pending.length>256)pending=pending.slice(-256);
+       }
+     }catch(e){
+       if(e.name==='BreakError'||/break received/i.test(e.message||'')){
+         breakCount++;
+         hint.textContent='El puerto CP210x informa una señal BREAK, no un código RFID. Comprobando si se recupera la recepción ('+breakCount+'/3)…';
+         if(breakCount>=3)stopped=true;
+       }else{
+         throw e;
+       }
+     }finally{
+       try{reader.releaseLock()}catch(_){}
+       reader=null;
      }
-     if(pending.length>256)pending=pending.slice(-256);
    }
    if(candidate){
      if(input.isConnected){
@@ -176,15 +191,18 @@ async function tryReadRFID(input,btn,hint){
        input.value=candidate;
        hint.textContent=repeated?'Código candidato '+candidate+' recibido, pero ya existe en '+repeated.name+'. Revisa antes de guardar.':'Código candidato recibido: '+candidate+'. Confirma que corresponde al chip antes de guardar.';
      }
+   }else if(breakCount){
+     hint.textContent='Se reconoció el puerto USB, pero el lector devolvió señal BREAK ('+breakCount+' vez/veces). No se obtuvo el código RFID. El modelo JWM puede requerir su protocolo propio de lectura mediante el auxiliar Windows.';
    }else if(received){
-     hint.textContent='El puerto entregó '+received+' bytes, pero no se identificó un código RFID en formato ASCII verificable. El WM-5000V1 requiere integrar su protocolo en el auxiliar Windows.';
+     hint.textContent='Se recibieron '+received+' bytes, pero no se pudo identificar un código RFID fiable. No se modificó ningún campo.';
    }else{
-     hint.textContent='No se recibieron códigos en vivo. El WM-5000V1 puede almacenar la lectura internamente; será necesario completar la descarga mediante el auxiliar Windows.';
+     hint.textContent='Puerto USB conectado, sin código RFID recibido. El JWM puede almacenar las marcaciones en su memoria; falta integrar el protocolo de descarga en el auxiliar Windows.';
    }
  }catch(e){
-   if(e.name==='NotFoundError')hint.textContent='No seleccionaste ningún dispositivo.';
-   else if(e.name==='NetworkError'||e.name==='InvalidStateError')hint.textContent='No se pudo abrir el puerto. Verifica la conexión USB y cierra el programa JWM si está abierto.';
-   else hint.textContent='No fue posible leer el lector USB: '+(e.message||String(e));
+   if(e.name==='NotFoundError')hint.textContent='No seleccionaste ningún puerto.';
+   else if(e.name==='NetworkError'||e.name==='InvalidStateError')hint.textContent='No se pudo abrir el puerto. Verifica el cable y cierra JWM si está usando COM7.';
+   else if(e.name==='BreakError'||/break received/i.test(e.message||''))hint.textContent='Se detectó una señal BREAK en el puerto serie. No se obtuvo el código RFID. Hace falta validar el protocolo del JWM.';
+   else hint.textContent='No fue posible leer el puerto USB: '+(e.message||String(e));
  }finally{
    if(timeout)clearTimeout(timeout);
    if(reader){try{await reader.cancel()}catch(_){}try{reader.releaseLock()}catch(_){}}
