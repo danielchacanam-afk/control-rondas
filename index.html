@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102c39">
+  <meta name="description" content="Panel de control de rondas para edificios con lectores RFID JWM.">
+  <title>Control de Rondas · Administración de edificios</title>
+  <link rel="stylesheet" href="styles.css">
+  <script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#inicio"><span class="brand-icon" aria-hidden="true">◈</span><span><b>CONTROL DE RONDAS</b><small>Administración de edificios</small></span></a>
+      <label class="small-label" for="building-picker">EDIFICIO ACTIVO</label>
+      <select id="building-picker" aria-label="Edificio activo"></select>
+      <nav class="nav" aria-label="Navegación principal">
+        <a href="#inicio" data-route="inicio"><span>▦</span> Inicio</a>
+        <a href="#lecturas" data-route="lecturas"><span>≡</span> Lecturas</a>
+        <a href="#calendario" data-route="calendario"><span>▤</span> Calendario</a>
+        <a href="#conserjes" data-route="conserjes"><span>♙</span> Conserjes</a>
+        <a href="#configuracion" data-route="configuracion"><span>⚙</span> Configuración</a>
+        <a href="#sincronizacion" data-route="sincronizacion"><span>⇅</span> Sincronización</a>
+        <a href="#informes" data-route="informes"><span>▥</span> Informes</a>
+      </nav>
+      <div class="side-note"><span class="dot warning"></span><b>Prototipo GitHub Pages</b><p>Los datos se guardan únicamente en este navegador. No existe sincronización en la nube todavía.</p></div>
+    </aside>
+    <div class="main-wrap">
+      <header class="topbar"><button class="hamburger" id="menu-button" aria-label="Abrir menú">☰</button><span id="breadcrumb">Panel general</span><div class="top-right"><span class="pill pill-warn">MODO LOCAL</span><span id="today-label"></span></div></header>
+      <main id="app" tabindex="-1"></main>
+    </div>
+  </div>
+  <dialog id="modal"><form method="dialog"><button value="cancel" class="close-modal" aria-label="Cerrar">×</button><div id="modal-content"></div></form></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
