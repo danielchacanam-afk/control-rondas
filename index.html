@@ -9,7 +9,9 @@
   <link rel="stylesheet" href="styles.css?v=20261118-rfid-2">
   <script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script defer src="jwm-serial.js?v=1"></script>
-  <script defer src="app.js?v=20261118-jwm-serial-1"></script>
+  <script defer src="app.js?v=20261118-cloud-1"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js"></script>
+  <script defer src="cloud.js?v=20261118-1"></script>
 </head>
 <body>
   <div class="shell">
@@ -26,7 +28,7 @@
         <a href="#sincronizacion" data-route="sincronizacion"><span>⇅</span> Sincronización</a>
         <a href="#informes" data-route="informes"><span>▥</span> Informes</a>
       </nav>
-      <div class="side-note"><span class="dot warning"></span><b>Prototipo GitHub Pages</b><p>Los datos se guardan únicamente en este navegador. No existe sincronización en la nube todavía.</p></div>
+      <div class="side-note"><span class="dot warning"></span><b>Prototipo GitHub Pages</b><p>Lecturas sincronizadas con Supabase. Configuración local por navegador.</p></div>
     </aside>
     <div class="main-wrap">
       <header class="topbar"><button class="hamburger" id="menu-button" aria-label="Abrir menú">☰</button><span id="breadcrumb">Panel general</span><div class="top-right"><span class="pill pill-warn">MODO LOCAL</span><span id="today-label"></span></div></header>
