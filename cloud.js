@@ -15,7 +15,7 @@ function renderCloudPanel() {
   return header('Sincronización', 'El auxiliar Windows envía las marcaciones del lector 5561 a la nube.') +
     '<section class="panel"><h2>Cuenta de acceso</h2>' + account +
     '<p id="cloud-status" role="status">' + safe(cloudMessage) + '</p>' +
-    '<p>Las lecturas se actualizan cada 15 segundos mientras la página está abierta.</p></section>';
+    '<p>Las lecturas y la configuración se actualizan cada 15 segundos mientras la página está abierta.</p></section>' + renderConfigCloudPanel();
 }
 function cloudStatus(message) {
   cloudMessage = message;
@@ -48,11 +48,13 @@ async function refreshCloud() {
     for (const building of buildings) {
       if (!state.buildings.some(item => item.id === building.id)) state.buildings.push({ id: building.id, name: building.nombre, demo: false });
     }
+    await configRefresh(buildings, generation);
+    if (generation !== cloudGeneration) return;
     cloudReadings = rows;
     cloudStatus(buildings.length
       ? rows.length + ' marcaciones disponibles. Última consulta ' + new Intl.DateTimeFormat('es-CL', { hour:'2-digit', minute:'2-digit', second:'2-digit' }).format(new Date()) + '.'
       : 'La cuenta está activa. Falta que el administrador le asigne acceso a un edificio.');
-    if (!document.getElementById('modal')?.open && !document.activeElement?.closest('#cloud-login')) render();
+    if (!document.getElementById('modal')?.open && !document.activeElement?.matches('input, textarea, select')) render();
   } catch (error) {
     cloudStatus('No se pudo actualizar desde la nube. ' + error.message);
   } finally {
@@ -95,6 +97,7 @@ document.addEventListener('click', async event => {
   }
 });
 cloudClient.auth.onAuthStateChange((_event, session) => {
+  configSetAccount(session?.user);
   cloudGeneration++;
   cloudUser = session?.user || null;
   cloudReadings = [];

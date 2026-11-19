@@ -1,5 +1,5 @@
 'use strict';
-/* Control de Rondas - GitHub Pages MVP. Datos locales; aún no hay agente USB ni backend. */
+/* Control de Rondas: configuración compartida y auxiliar USB independiente. */
 const KEY='control-rondas-gh-v1';
 const pointNames=['Sala de Bombas','Grupo Electrógeno','Estacionamiento de Visitas 1','Estacionamiento de Visitas 2','Sala de Basura 1','Sala de Basura 2','Sala de Calderas','A. Caliente 1 - O','A. Caliente 1 - P','A. Caliente 2 - O','A. Caliente 2 - P','A. Caliente 3 - O','A. Caliente 3 - P','A. Caliente 4 - O','A. Caliente 4 - P','A. Caliente 5 - O','A. Caliente 5 - P'];
 const weekdays=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -26,7 +26,7 @@ function createBase(){
  return {version:1,activeId:'brown-norte',buildings:[{id:'brown-norte',name:'Brown Norte',demo:false}],points:points.map(p=>({...p,buildingId:'brown-norte'})),employees:[],schedules,devices:[{id:id(),buildingId:'brown-norte',serial:'5561',model:'JWM 5000V1',active:true}],readings:[],history:[]};
 }
 let state;try{state=JSON.parse(localStorage.getItem(KEY));if(!state||state.version!==1)state=createBase()}catch(_){state=createBase()}
-const save=()=>{localStorage.setItem(KEY,JSON.stringify(state))};
+const save=()=>{if(typeof persistCloudState==='function'&&persistCloudState())return;localStorage.setItem(KEY,JSON.stringify(state))};
 let route='inicio',tab='rondas',filterDate=dateParts().month,readFilter='',search='',viewDay='',refDate=new Date();
 const bld=()=>state.buildings.find(b=>b.id===state.activeId)||state.buildings[0];
 let cloudReadings = [];
@@ -73,7 +73,7 @@ function getEvaluations(month){const [y,m]=month.split('-').map(Number),n=new Da
 const schedLabel=s=>`${dayTitle[s.type]} · ${s.turn} · ${s.start}–${s.end}${s.offset?' (+1 día)':''}`;
 function toolbar(){const sel=document.getElementById('building-picker');sel.innerHTML=state.buildings.map(b=>`<option value="${safe(b.id)}" ${b.id===state.activeId?'selected':''}>${safe(b.name)}${b.demo?' (DEMO)':''}</option>`).join('');document.getElementById('today-label').textContent=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short',year:'numeric'}).format(new Date());document.querySelectorAll('[data-route]').forEach(a=>a.classList.toggle('active',a.dataset.route===route));document.getElementById('breadcrumb').textContent=({inicio:'Panel general',lecturas:'Registros de lecturas',calendario:'Calendario mensual',conserjes:'Personal',configuracion:'Administración',sincronizacion:'Integraciones',informes:'Reportes'}[route]||'Panel general');}
 function header(title,description,actions='',eyebrow='CONTROL Y SUPERVISIÓN'){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${safe(title)}</h1><p class="desc">${description}</p></div><div class="actions">${actions}</div></div>`}
-function banner(){return `<div class="banner"><strong>Versión de desarrollo.</strong> El auxiliar descarga las marcaciones por USB. Inicia sesión en Sincronización para consultar las lecturas de la nube. La configuración de rondas se guarda en este navegador. ${bld().demo?'<strong> Edificio de demostración: los datos son ficticios.</strong>':''}</div>`}
+function banner(){return `<div class="banner"><strong>Versión de desarrollo.</strong> El auxiliar descarga las marcaciones por USB. Inicia sesión en Sincronización para consultar las lecturas de la nube. Consulta el estado de la configuración compartida en Sincronización. ${bld().demo?'<strong> Edificio de demostración: los datos son ficticios.</strong>':''}</div>`}
 function countRows(evals){return Object.fromEntries(['ok','incomplete','outside','missed','pending','unconfigured'].map(s=>[s,evals.filter(x=>x.status===s).length]))}
 function panelTable(headers,rows){return `<div class="table-scroll"><table><thead><tr>${headers.map(h=>`<th>${safe(h)}</th>`).join('')}</tr></thead><tbody>${rows||`<tr><td colspan="${headers.length}" class="empty">No hay registros para mostrar.</td></tr>`}</tbody></table></div>`}
 function renderHome(){const ev=getEvaluations(filterDate),c=countRows(ev),evaluables=c.ok+c.incomplete+c.outside+c.missed;const rate=evaluables?Math.round(100*c.ok/evaluables):null;
@@ -102,7 +102,7 @@ function renderSettings(){let inner='';
  }else if(tab==='lectores'){
  const rows=current('devices').map(d=>`<tr><td>${safe(d.model)}</td><td>${safe(d.serial)}</td><td>${d.active?'Registrado':'Archivado'}</td><td><button class="btn small" data-action="edit-device" data-id="${d.id}">Editar</button> <button class="btn small" data-action="toggle-device" data-id="${d.id}">${d.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Dispositivos</h2><button class="btn primary" data-action="add-device">+ Agregar lector</button></div>${panelTable(['Modelo','Número de equipo','Estado','Acciones'],rows)}<p class="subhead">Registrar un equipo no establece comunicación USB; requiere el agente Windows.</p>`;
  }
- return header('Configuración','Edita horarios, puntos RFID, conserjes y edificios. Las modificaciones se guardan en este navegador.')+banner()+`<div class="tabs">${[['rondas','Horarios y rondas'],['puntos','Puntos de control'],['edificios','Edificios'],['lectores','Lectores']].map(([k,v])=>`<button class="tab ${tab===k?'selected':''}" data-tab="${k}">${v}</button>`).join('')}</div><section class="panel">${inner}</section><p class="muted" style="margin-top:14px;font-size:12px">Versión inicial: las reglas actuales se aplican al recalcular meses anteriores. Las versiones históricas de configuración se implementarán en la base de datos en la nube.</p>`;
+ return header('Configuración','Edita horarios, puntos RFID, conserjes y edificios. Las modificaciones se sincronizan al iniciar sesión.')+banner()+`<div class="tabs">${[['rondas','Horarios y rondas'],['puntos','Puntos de control'],['edificios','Edificios'],['lectores','Lectores']].map(([k,v])=>`<button class="tab ${tab===k?'selected':''}" data-tab="${k}">${v}</button>`).join('')}</div><section class="panel">${inner}</section><p class="muted" style="margin-top:14px;font-size:12px">Versión inicial: las reglas actuales se aplican al recalcular meses anteriores. La nube conserva versiones de configuración; los informes aún no seleccionan reglas por vigencia.</p>`;
 }
 function renderSync(){return typeof renderCloudPanel === 'function' ? renderCloudPanel() : header('Sincronización','Cargando conexión con la nube…');}
 
@@ -201,4 +201,4 @@ document.addEventListener('input',e=>{if(e.target.id==='read-search'){readFilter
 document.getElementById('menu-button').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
 window.addEventListener('hashchange',()=>{route=(location.hash||'#inicio').slice(1);render()});
 route=(location.hash||'#inicio').slice(1);render();
-// Hoja de estilo y scripts pensados para GitHub Pages, sin backend ni conexión física con JWM.
+// Interfaz estática con datos autenticados en Supabase.

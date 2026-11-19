@@ -1,61 +1,33 @@
-# Control de Rondas — GitHub Pages (versión inicial)
+# Control de Rondas
 
-Interfaz web de control de rondas para edificios en Chile, basada en el formato de cuatro hojas de la planilla de referencia de Brown Norte. La aplicación usa HTML, CSS y JavaScript sin instalación ni herramientas de compilación.
+Interfaz en GitHub Pages, datos autenticados en Supabase y auxiliar Windows para el lector JWM 5561.
 
-## Qué funciona hoy
+## Uso
 
-- Navegación: Inicio, Lecturas, Calendario, Conserjes, Configuración, Sincronización e Informes.
-- Administración **local** de edificios, trabajadores, lectores, puntos RFID (código/nombre/activo) y rondas (tipo de día, turno, inicio, fin, jornada siguiente, responsable y puntos obligatorios).
-- Importación CSV con columnas `Fecha y hora`, `Código`, `Punto de control`, `Equipo`. Acepta `;` o `,`, fecha `DD-MM-YYYY HH:mm` o `YYYY-MM-DD HH:mm`, y descarta duplicados por `equipo + fecha/hora + código`.
-- Calendario mensual, evaluación de cumplimiento por ventana, estados `Cumplida`, `Incompleta`, `Fuera de horario`, `No realizada`, `Pendiente` y `Sin configurar`.
-- Resumen por conserje. Porcentaje: cumplidas / (cumplidas + incompletas + fuera de horario + no realizadas), siempre que la ronda sea evaluable.
-- Exportar lecturas a CSV y generar Excel con cuatro hojas usando SheetJS cargado desde CDN. El navegador debe tener conexión a internet para exportar XLSX.
-- Edificio de prueba independiente con datos ficticios (puedes añadirlo desde la consola del navegador llamando `demo()`, si necesitas probar antes de importar). No se importan datos reales automáticamente.
+1. Abrir la web e iniciar sesión en Sincronización con una cuenta que tenga acceso al edificio.
+2. Una sola vez, desde el navegador que contiene la configuración original, pulsar Compartir configuración de este navegador. Se conserva un respaldo local antes del primer envío.
+3. Puntos RFID, conserjes, horarios, lectores, edificios y lecturas CSV pasan a compartirse por cuenta. Otro dispositivo recibe la configuración al iniciar sesión, con consultas cada 15 segundos.
+4. Las ediciones pendientes se conservan por cuenta en el dispositivo y se reintentan al recuperar la conexión. Ante ediciones simultáneas se conserva la versión pendiente para descargarla; no se sobrescribe una versión más reciente.
 
-## Límites deliberados de esta versión
+## Descarga independiente de la web
 
-- **NO descarga datos del lector JWM por USB**; el protocolo del WM-5000V1 está pendiente de validación. La página `Sincronización` indica esto expresamente.
-- **NO envía datos a la nube**, no implementa inicio de sesión ni autorización multiusuario. Los datos se guardan en `localStorage` del navegador, y se pueden perder si se borra el almacenamiento. No usar como sistema operativo de producción.
-- La evaluación de meses anteriores usa los horarios y códigos actuales; aún no hay versionado de reglas por vigencia.
-- El filtro `Fuera de horario` es heurístico (hay lecturas de puntos exigidos cercanas al día, pero ninguna en la ventana). La lógica final se validará con registros reales.
-- No hay cálculo automático de festivos. Configurar días especiales será una etapa posterior.
-- El número 5561 es el equipo identificado en las fotografías. El 4639 aparece en la planilla de ejemplo como otro equipo histórico; no se mezclan automáticamente.
+El auxiliar Windows consulta el lector cada 30 segundos, guarda primero en SQLite y envía a Supabase. Funciona con el navegador cerrado. El PC debe estar encendido, con la sesión Windows iniciada y el lector conectado por USB. El acceso directo de Inicio arranca el auxiliar al iniciar sesión; todavía no es un servicio que arranque antes del inicio de sesión. Si falta internet, conserva los registros y reintenta. No borra el lector ni cambia su reloj.
 
-## Cómo publicar en GitHub Pages
+Las nuevas marcaciones se consultan desde cualquier dispositivo con internet y una cuenta autorizada; el lector solo debe conectarse al PC que ejecuta el auxiliar. Registrar un lector en la interfaz no provisiona su credencial de envío: esa vinculación se administra en el backend.
 
-1. Entrar a [github.com/new](https://github.com/new) con la cuenta **danielchacanam-afk**.
-2. Crear un repositorio nuevo, por ejemplo `control-rondas`, de visibilidad **Public** para GitHub Pages gratuito (revisar opciones disponibles del plan). No mezclarlo con proyectos existentes.
-3. Subir `index.html`, `styles.css`, `app.js`, `README.md` y `.nojekyll` a la raíz del repositorio. También puedes descomprimir el ZIP de entrega y usar «Add file → Upload files».
-4. Ir a `Settings → Pages → Build and deployment`, elegir `Deploy from a branch`, rama `main`, carpeta `/ (root)` y guardar.
-5. Cuando GitHub indique el despliegue, la dirección será normalmente `https://danielchacanam-afk.github.io/control-rondas/`.
+## Base de datos
 
-No incluir códigos de acceso ni datos personales confidenciales en el repositorio público.
+Aplicar primero supabase/schema.sql y después supabase/configuracion.sql. El segundo archivo crea versiones de configuración y su historial, RLS por edificio y funciones de escritura con revisión esperada. La primera migración usa revisión 0, por lo que otro navegador no puede reemplazarla con su configuración inicial. Las tablas de configuración no aceptan escritura directa del cliente. Los miembros de un edificio pueden editarlo y dar de alta nuevos edificios propios. Las credenciales privadas del lector permanecen fuera de este repositorio.
 
-## Siguiente fase: API + auxiliar Windows
+## Validación
 
-GitHub Pages solo sirve archivos estáticos; para guardar lecturas compartidas se necesita un backend separado, por ejemplo Supabase o una API Node/PostgreSQL.
+Ejecutar `node --test test/config-cloud.test.cjs`. Cubre migración entre clientes, cola sin red y recarga, conflictos, respuesta perdida, cierre de sesión y edición durante un envío. La migración se validó además en PostgreSQL con usuarios, roles y políticas RLS: acceso anónimo denegado, separación de edificios, rechazo de versiones antiguas y creación de edificio con acceso del creador.
 
-### Modelo de datos propuesto
+## Límites actuales
 
-`buildings`, `memberships`, `employees`, `devices`, `rfid_points`, `round_schedule_versions`, `schedule_required_points`, `raw_reads`, `sync_batches`, `audit_log`.
-
-### Contrato propuesto del agente
-
-```
-POST /api/agent/records
-Authorization: Bearer <TOKEN_EXCLUSIVO_DEL_EQUIPO>
-Content-Type: application/json
-
-{
-  "device_serial":"5561",
-  "events":[{"timestamp_local":"2026-11-17T10:14:00","rfid_code":"0445","source_id":"..."}]
-}
-```
-
-El backend debe validar el token en servidor, asociarlo a un edificio, convertir correctamente America/Santiago a instantes UTC (incluidos los cambios de horario), deduplicar por clave estable, guardar el payload original, y responder con `accepted`, `duplicates`, `rejected`. El token nunca se incorpora al JavaScript público. El agente Windows almacenará eventos de forma duradera en SQLite y reintentará sin duplicar lecturas si cae internet.
-
-**La primera prueba pendiente es leer registros reales del JWM WM-5000V1 con una operación de solo lectura, sin ejecutar comandos de borrado.**
-
-## Licencia y dependencia externa
-
-El exportador `.xlsx` utiliza SheetJS 0.18.5 desde CDNJS. Revisa la licencia correspondiente para su distribución. El resto de los archivos de este prototipo son código del proyecto.
+- Los informes se calculan al abrir la web. Se conserva el historial de configuración, pero los informes históricos todavía usan las reglas actuales, sin vigencias.
+- El calendario no resuelve festivos automáticamente y Fuera de horario usa una heurística de lecturas cercanas a la fecha.
+- Los registros del lector no incluyen año; el auxiliar lo infiere y conserva la trama original.
+- El botón Leer por Web Serial no descarga por sí solo la memoria JWM. La descarga comprobada se realiza mediante el auxiliar.
+- Las cuentas nuevas necesitan asignación de acceso. No hay administración de permisos desde la interfaz.
+- El edificio DEMO es local y sus datos ficticios no se comparten.
