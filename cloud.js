@@ -4,6 +4,12 @@ let cloudUser = null;
 let cloudMessage = 'Inicia sesión para consultar las marcaciones recibidas.';
 let cloudBusy = false;
 let cloudGeneration = 0;
+function renderCloudNotice() {
+  if (!cloudUser) return '<strong>Inicia sesión en este dispositivo para ver las lecturas compartidas.</strong> ' +
+    'Usa la misma cuenta con acceso al edificio. <a href="#sincronizacion">Iniciar sesión</a>.';
+  return '<strong>Cuenta conectada.</strong> <span id="cloud-overview-status" role="status">' + safe(cloudMessage) +
+    '</span> <a href="#sincronizacion">Ver sincronización</a>.';
+}
 function renderCloudPanel() {
   const account = cloudUser
     ? '<p>Sesión de ' + safe(cloudUser.email) + '</p><button class="btn" id="cloud-logout">Cerrar sesión</button>'
@@ -21,6 +27,8 @@ function cloudStatus(message) {
   cloudMessage = message;
   const node = document.getElementById('cloud-status');
   if (node) node.textContent = message;
+  const overview = document.getElementById('cloud-overview-status');
+  if (overview) overview.textContent = message;
 }
 async function refreshCloud() {
   if (!cloudUser || cloudBusy) return;
@@ -102,7 +110,7 @@ cloudClient.auth.onAuthStateChange((_event, session) => {
   cloudUser = session?.user || null;
   cloudReadings = [];
   cloudMessage = cloudUser ? 'Consultando las marcaciones…' : 'Inicia sesión para consultar las marcaciones recibidas.';
-  if (route === 'sincronizacion') render();
+  if (!document.getElementById('modal')?.open) render();
   setTimeout(() => refreshCloud(), 0);
 });
 setInterval(refreshCloud, 15000);
