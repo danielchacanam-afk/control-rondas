@@ -11,7 +11,7 @@ Interfaz en GitHub Pages, datos autenticados en Supabase y auxiliar Windows para
 
 ## Descarga independiente de la web
 
-El auxiliar Windows consulta el lector cada 30 segundos, guarda primero en SQLite y envía a Supabase. Funciona con el navegador cerrado. El PC debe estar encendido, con la sesión Windows iniciada y el lector conectado por USB. El acceso directo de Inicio arranca el auxiliar al iniciar sesión; todavía no es un servicio que arranque antes del inicio de sesión. Si falta internet, conserva los registros y reintenta. No borra el lector ni cambia su reloj.
+El auxiliar Windows consulta el lector cada 30 segundos, guarda primero en SQLite y envía a Supabase. Funciona con el navegador cerrado. El PC debe estar encendido y el lector conectado por USB. La instalación del servicio ControlRondasJWM permite arrancar con Windows sin iniciar sesión, bajo LocalService, con reinicio automático ante fallos. El instalador respalda el arranque anterior y copia SQLite de forma consistente a ProgramData. Si falta internet, conserva los registros y reintenta. No borra el lector ni cambia su reloj.
 
 Las nuevas marcaciones se consultan desde cualquier dispositivo con internet y una cuenta autorizada; el lector solo debe conectarse al PC que ejecuta el auxiliar. Registrar un lector en la interfaz no provisiona su credencial de envío: esa vinculación se administra en el backend.
 
@@ -31,3 +31,11 @@ Ejecutar `node --test test/config-cloud.test.cjs`. Cubre migración entre client
 - El botón Leer por Web Serial no descarga por sí solo la memoria JWM. La descarga comprobada se realiza mediante el auxiliar.
 - Las cuentas nuevas necesitan asignación de acceso. No hay administración de permisos desde la interfaz.
 - El edificio DEMO es local y sus datos ficticios no se comparten.
+
+## Servicio y estado del lector
+
+Aplicar también `supabase/estado-lectores.sql`. El auxiliar informa cada 30 segundos usando la misma credencial privada del lector. En Sincronización se muestran conexión USB, funcionamiento como servicio o sesión, última señal, descarga, envío confirmado, pendientes y errores. Más de 2 minutos sin señal se presenta como información antigua; no se afirma que el USB siga conectado.
+
+El ejecutable se construye con PyInstaller y los módulos de `windows/`. Instalar con `windows/Instalar-servicio.ps1` como administrador; el instalador prueba reinicio controlado, terminación inesperada y recuperación SCM, y comprueba integridad y cantidad de lecturas después. No reinicia el PC. Un reinicio completo y el arranque antes de entrar a Windows requieren una prueba operativa aparte.
+
+Pruebas del auxiliar: `python -m unittest discover -s windows -p test_recovery.py -v` con pyserial y tzdata instalados. Pruebas web: `node --test test/*.test.cjs`. Las pruebas de cortes de internet/USB son simuladas sobre una base temporal, sin desactivar la red ni los dispositivos del PC.

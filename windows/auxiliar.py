@@ -1,10 +1,14 @@
 import argparse
 import csv
+import json
 import logging
 import os
 import sqlite3
 import sys
 import time
+import threading
+from logging.handlers import RotatingFileHandler
+from health import now, read_status, store_status, send_status
 from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,9 +24,10 @@ TZ = ZoneInfo("America/Santiago")
 DEVICE = 5561
 CAPACITY_PACKETS = 16000
 USB_ID = (0x10C4, 0xEA60)
-ROOT = Path(os.environ["LOCALAPPDATA"]) / "Control de Rondas"
+ROOT = Path(os.environ.get("LOCALAPPDATA", os.environ.get("PROGRAMDATA", "."))) / "Control de Rondas"
 DB = ROOT / "lecturas.sqlite3"
 CSV = ROOT / "lecturas.csv"
+STOP = threading.Event()
 
 
 class ProtocolError(Exception):
@@ -44,6 +49,8 @@ class Reader:
     def response(self, opcode, timeout=1.8):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            if STOP.is_set():
+                raise InterruptedError('Descarga interrumpida por parada del servicio')
             while len(self.pending) >= 4:
                 if self.pending[:2] != b"\xd5\xd5":
                     del self.pending[0]
@@ -160,58 +167,122 @@ def sync_once():
     return records
 
 
-def main():
+def run_cycle(status):
+    try:
+        ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == USB_ID]
+        status['port'] = ports[0] if len(ports) == 1 else None
+        records = sync_once()
+        status['usb'] = 'connected' if records is not None else 'disconnected'
+        status['usb_error'] = None
+        if records is not None:
+            status['last_download'] = now()
+    except (OSError, TimeoutError, ProtocolError, sqlite3.Error) as error:
+        status['usb'] = 'error'
+        status['usb_error'] = str(error)[:500]
+        logging.warning('USB: %s', error)
+    config = ROOT / 'supabase.json'
+    try:
+        with closing(database()) as conn:
+            sent = sync_pending(conn, config, DEVICE)
+            if sent:
+                status['last_upload'] = now()
+                logging.info('Supabase confirmó %s marcaciones.', sent)
+            status['total'] = conn.execute('SELECT count(*) FROM lecturas WHERE equipo=?', (DEVICE,)).fetchone()[0]
+            if config.exists():
+                from sync_cloud import load_config
+                _, host = load_config(config)
+                status['pending'] = conn.execute('''SELECT count(*) FROM lecturas l WHERE l.equipo=? AND NOT EXISTS
+                    (SELECT 1 FROM nube_enviadas n WHERE n.destino=? AND n.equipo=l.equipo AND n.codigo=l.codigo AND n.fecha=l.fecha)''', (DEVICE, host)).fetchone()[0]
+            else:
+                status['pending'] = status['total']
+        status['cloud_error'] = None if config.exists() else 'Falta configurar el envío a la nube'
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error) as error:
+        status['cloud_error'] = str(error)[:500]
+        # Cuenta pendientes también cuando falla el envío, sin alterar las confirmadas.
+        with closing(database()) as conn:
+            status['total'] = conn.execute('SELECT count(*) FROM lecturas WHERE equipo=?', (DEVICE,)).fetchone()[0]
+            try:
+                from sync_cloud import load_config
+                _, host = load_config(config)
+                status['pending'] = conn.execute('''SELECT count(*) FROM lecturas l WHERE l.equipo=? AND NOT EXISTS
+                    (SELECT 1 FROM nube_enviadas n WHERE n.destino=? AND n.equipo=l.equipo AND n.codigo=l.codigo AND n.fecha=l.fecha)''', (DEVICE, host)).fetchone()[0]
+            except (OSError, ValueError, KeyError, sqlite3.Error):
+                status['pending'] = status['total']
+        logging.warning('Sincronización pendiente: %s', error)
+    status['checked_at'] = now()
+    store_status(ROOT, status)
+    if config.exists():
+        try:
+            send_status(config, DEVICE, status)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            logging.warning('Estado pendiente de envío: %s', error)
+    return status
+
+
+def run(stop):
+    global STOP
+    STOP = stop
     import msvcrt
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--once", action="store_true", help="Descargar una vez y salir")
-    args = parser.parse_args()
     ROOT.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=[
-        logging.FileHandler(ROOT / "auxiliar.log", encoding="utf-8"),
-        logging.StreamHandler(),
-    ])
-    with (ROOT / "auxiliar.lock").open("a+b") as lock:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', handlers=[
+        RotatingFileHandler(ROOT / 'auxiliar.log', maxBytes=2_000_000, backupCount=3, encoding='utf-8'),
+    ], force=True)
+    with (ROOT / 'auxiliar.lock').open('a+b') as lock:
         lock.seek(0)
         try:
             msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
-            logging.error("Ya hay un auxiliar de rondas activo.")
+            logging.error('Ya hay un auxiliar de rondas activo.')
             return 1
-        if args.once:
-            try:
-                records = sync_once()
-                if records is None:
-                    raise ProtocolError("No hay lector conectado.")
-                for device, code, stamp, _ in records:
-                    print(stamp, code, device)
-                return 0
-            except (OSError, TimeoutError, ProtocolError, sqlite3.Error) as error:
-                logging.error("%s", error)
-                return 1
-        state = None
-        while True:
-            try:
-                records = sync_once()
-                if records is None and state != "disconnected":
-                    logging.info("Esperando la conexión USB del lector.")
-                state = "disconnected" if records is None else "connected"
-            except (OSError, TimeoutError, ProtocolError, sqlite3.Error) as error:
-                if str(error) != state:
-                    logging.warning("%s", error)
-                    state = str(error)
-            try:
-                config = ROOT / "supabase.json"
-                if config.exists():
-                    with closing(database()) as conn:
-                        sent = sync_pending(conn, config, DEVICE)
-                    if sent:
-                        logging.info("Supabase confirmó %s marcaciones.", sent)
-            except (OSError, ValueError, KeyError, TypeError, sqlite3.Error) as error:
-                logging.warning("Sincronización pendiente: %s", error)
-            time.sleep(30)
+        logging.info('Auxiliar 2.0 iniciado (%s).', 'servicio' if '--service' in sys.argv else 'sesión')
+        status = read_status(ROOT)
+        status.update(mode='service' if '--service' in sys.argv else 'session', version='2.0')
+        while not stop.is_set():
+            run_cycle(status)
+            stop.wait(30)
+        logging.info('Auxiliar detenido de forma controlada.')
+    return 0
 
 
-if __name__ == "__main__":
+def main():
+    global ROOT, DB, CSV
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--service', action='store_true')
+    parser.add_argument('--once', action='store_true')
+    parser.add_argument('--data-dir', type=Path, default=ROOT)
+    parser.add_argument('--backup-from', type=Path)
+    parser.add_argument('--verify', action='store_true')
+    args = parser.parse_args()
+    ROOT = args.data_dir.resolve()
+    DB, CSV = ROOT / 'lecturas.sqlite3', ROOT / 'lecturas.csv'
+    if args.verify:
+        with closing(sqlite3.connect(DB.as_uri() + '?mode=ro', uri=True)) as conn:
+            integrity = conn.execute('pragma integrity_check').fetchone()[0]
+            count = conn.execute('select count(*) from lecturas').fetchone()[0]
+        print(json.dumps({'integrity': integrity, 'readings': count}))
+        return 0 if integrity == 'ok' else 1
+    if args.backup_from:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        if DB.exists():
+            raise FileExistsError('Ya existe la base de destino; no se sobrescribirá')
+        with closing(sqlite3.connect(args.backup_from.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+            with closing(sqlite3.connect(DB)) as target:
+                source.backup(target)
+        return 0
+    if args.service:
+        from service_host import dispatch
+        dispatch(run)
+        return 0
+    if args.once:
+        # Una descarga local de diagnóstico. No envía ni borra datos del dispositivo.
+        ROOT.mkdir(parents=True, exist_ok=True)
+        records = sync_once()
+        if records is None:
+            raise ProtocolError('No hay lector conectado.')
+        print('Descargadas:', len(records))
+        return 0
+    return run(threading.Event())
+
+
+if __name__ == '__main__':
     sys.exit(main())
-
-

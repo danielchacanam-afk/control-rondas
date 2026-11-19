@@ -142,7 +142,7 @@ function renderConfigCloudPanel() {
       ': aún no tiene configuración compartida.</p><button class="btn primary" data-config-migrate="' + safe(buildingId) + '">Compartir configuración de este navegador</button>').join('') +
     (configConflicts.size ? '<div class="actions"><button class="btn" id="config-download">Descargar mis cambios pendientes</button>' +
       '<button class="btn" id="config-reload">Cargar versión de la nube</button></div>' : '') +
-    '<p>Para descargar y enviar por USB, el PC debe estar encendido, con la sesión de Windows iniciada y el lector conectado. Sin internet conserva las lecturas y reintenta el envío.</p></section>';
+    '<p>El PC debe estar encendido y el lector conectado por USB. El servicio funciona sin iniciar sesión en Windows; el auxiliar de sesión requiere una sesión abierta. Sin internet conserva las lecturas y reintenta el envío.</p></section>';
 }
 document.addEventListener('click', async event => {
   const buildingId = event.target.dataset.configMigrate;

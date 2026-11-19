@@ -21,7 +21,7 @@ function renderCloudPanel() {
   return header('Sincronización', 'El auxiliar Windows envía las marcaciones del lector 5561 a la nube.') +
     '<section class="panel"><h2>Cuenta de acceso</h2>' + account +
     '<p id="cloud-status" role="status">' + safe(cloudMessage) + '</p>' +
-    '<p>Las lecturas y la configuración se actualizan cada 15 segundos mientras la página está abierta.</p></section>' + renderConfigCloudPanel();
+    '<p>Las lecturas y la configuración se actualizan cada 15 segundos mientras la página está abierta.</p></section>' + renderReaderHealth() + renderConfigCloudPanel();
 }
 function cloudStatus(message) {
   cloudMessage = message;
@@ -57,6 +57,7 @@ async function refreshCloud() {
       if (!state.buildings.some(item => item.id === building.id)) state.buildings.push({ id: building.id, name: building.nombre, demo: false });
     }
     await configRefresh(buildings, generation);
+    await refreshReaderHealth(generation);
     if (generation !== cloudGeneration) return;
     cloudReadings = rows;
     cloudStatus(buildings.length
@@ -109,6 +110,7 @@ cloudClient.auth.onAuthStateChange((_event, session) => {
   cloudGeneration++;
   cloudUser = session?.user || null;
   cloudReadings = [];
+  readerHealth = []; readerHealthError = "";
   cloudMessage = cloudUser ? 'Consultando las marcaciones…' : 'Inicia sesión para consultar las marcaciones recibidas.';
   if (!document.getElementById('modal')?.open) render();
   setTimeout(() => refreshCloud(), 0);
