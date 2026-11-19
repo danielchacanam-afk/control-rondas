@@ -39,3 +39,5 @@ Aplicar también `supabase/estado-lectores.sql`. El auxiliar informa cada 30 seg
 El ejecutable se construye con PyInstaller y los módulos de `windows/`. Instalar con `windows/Instalar-servicio.ps1` como administrador; el instalador prueba reinicio controlado, terminación inesperada y recuperación SCM, y comprueba integridad y cantidad de lecturas después. No reinicia el PC. Un reinicio completo y el arranque antes de entrar a Windows requieren una prueba operativa aparte.
 
 Pruebas del auxiliar: `python -m unittest discover -s windows -p test_recovery.py -v` con pyserial y tzdata instalados. Pruebas web: `node --test test/*.test.cjs`. Las pruebas de cortes de internet/USB son simuladas sobre una base temporal, sin desactivar la red ni los dispositivos del PC.
+
+Construcción reproducible: instalar `windows/requirements-build.txt` y ejecutar `windows/Construir.ps1 -Python <ruta-python> -Destination <carpeta-salida>`. El script incluye los datos TLS requeridos por el runtime cuando existen y comprueba que el ejecutable crea un contexto TLS válido antes de instalar. El instalador rechaza paquetes que no pasan esa prueba.

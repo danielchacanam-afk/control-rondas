@@ -27,6 +27,8 @@ try {
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Se necesita ejecutar como administrador' }
   if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) { throw 'El servicio ya existe; no se modificará una instalación existente' }
   if (-not (Test-Path -LiteralPath (Join-Path $Package 'ControlRondas.exe'))) { throw 'Falta el ejecutable probado' }
+  & (Join-Path $Package 'ControlRondas.exe') --check-tls
+  Native-Check 'Comprobación TLS del paquete'
   if (-not (Test-Path -LiteralPath (Join-Path $SourceData 'supabase.json'))) { throw 'Falta la configuración privada del lector' }
   if (Test-Path -LiteralPath (Join-Path $dataRoot 'lecturas.sqlite3')) { throw 'Ya existe una base de servicio; se conserva sin sobrescribir' }
   New-Item -ItemType Directory -Path $installRoot -Force | Out-Null

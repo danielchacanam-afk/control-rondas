@@ -252,9 +252,20 @@ def main():
     parser.add_argument('--data-dir', type=Path, default=ROOT)
     parser.add_argument('--backup-from', type=Path)
     parser.add_argument('--verify', action='store_true')
+    parser.add_argument('--report-status', action='store_true', help='Enviar el estado guardado sin abrir el USB')
+    parser.add_argument('--check-tls', action='store_true')
     args = parser.parse_args()
     ROOT = args.data_dir.resolve()
     DB, CSV = ROOT / 'lecturas.sqlite3', ROOT / 'lecturas.csv'
+    if args.check_tls:
+        import ssl
+        ssl.create_default_context()
+        print('TLS verificado')
+        return 0
+    if args.report_status:
+        send_status(ROOT / 'supabase.json', DEVICE, json.loads((ROOT / 'estado.json').read_text(encoding='utf-8')))
+        print('Estado confirmado por Supabase')
+        return 0
     if args.verify:
         with closing(sqlite3.connect(DB.as_uri() + '?mode=ro', uri=True)) as conn:
             integrity = conn.execute('pragma integrity_check').fetchone()[0]
