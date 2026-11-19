@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.exe
+*.zip
+**/conexion.json
+**/supabase.json
+**/lecturas.sqlite3
+**/estado.json
+**/PackageInfo.cs
+windows/dist/

@@ -12,6 +12,9 @@ class NoRedirect(request.HTTPRedirectHandler):
 
 def load_config(config_path):
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    if 'device_token_dpapi' in config:
+        from win_secret import unprotect
+        config['device_token'] = unprotect(config['device_token_dpapi'])
     project = urlsplit(config["url"])
     key = config["publishable_key"]
     token = config["device_token"]

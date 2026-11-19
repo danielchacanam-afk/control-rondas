@@ -254,9 +254,15 @@ def main():
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--report-status', action='store_true', help='Enviar el estado guardado sin abrir el USB')
     parser.add_argument('--check-tls', action='store_true')
+    parser.add_argument('--check-config', action='store_true')
     args = parser.parse_args()
     ROOT = args.data_dir.resolve()
     DB, CSV = ROOT / 'lecturas.sqlite3', ROOT / 'lecturas.csv'
+    if args.check_config:
+        from sync_cloud import load_config
+        load_config(ROOT / 'supabase.json')
+        print('Conexión verificada')
+        return 0
     if args.check_tls:
         import ssl
         ssl.create_default_context()
