@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#102c39">
   <meta name="description" content="Panel de control de rondas para edificios con lectores RFID JWM.">
   <title>Control de Rondas · Administración de edificios</title>
-  <link rel="stylesheet" href="styles.css?v=20261118-rfid-2">
+  <link rel="stylesheet" href="styles.css?v=20261120-menu-1">
   <script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script defer src="jwm-serial.js?v=1"></script>
-  <script defer src="app.js?v=20261120-access-1"></script>
+  <script defer src="app.js?v=20261120-menu-1"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js"></script>
   <script defer src="config-access.js?v=20261120-1"></script>
   <script defer src="config-cloud.js?v=20261120-access-1"></script>
@@ -18,7 +18,9 @@
 </head>
 <body>
   <div class="shell">
+    <button class="sidebar-backdrop" id="sidebar-backdrop" aria-label="Cerrar menú" hidden></button>
     <aside class="sidebar" id="sidebar">
+      <button class="sidebar-close" id="sidebar-close" aria-label="Cerrar menú">×</button>
       <a class="brand" href="#inicio"><span class="brand-icon" aria-hidden="true">◈</span><span><b>CONTROL DE RONDAS</b><small>Administración de edificios</small></span></a>
       <label class="small-label" for="building-picker">EDIFICIO ACTIVO</label>
       <select id="building-picker" aria-label="Edificio activo"></select>
@@ -33,7 +35,7 @@
       <div class="side-note"><span class="dot warning"></span><b>Prototipo GitHub Pages</b><p>Lecturas y configuración compartidas con tu cuenta.</p></div>
     </aside>
     <div class="main-wrap">
-      <header class="topbar"><button class="hamburger" id="menu-button" aria-label="Abrir menú">☰</button><span id="breadcrumb">Panel general</span><div class="top-right"><span class="pill pill-warn">CONTROL DE RONDAS</span><span id="today-label"></span></div></header>
+      <header class="topbar"><button class="hamburger" id="menu-button" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false">☰</button><span id="breadcrumb">Panel general</span><div class="top-right"><span class="pill pill-warn">CONTROL DE RONDAS</span><span id="today-label"></span></div></header>
       <main id="app" tabindex="-1"></main>
     </div>
   </div>

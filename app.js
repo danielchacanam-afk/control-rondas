@@ -110,7 +110,7 @@ function renderSync(){return typeof renderCloudPanel === 'function' ? renderClou
 function peopleStats(evals){const by=new Map();for(const p of current('employees'))by.set(p.id,{name:p.name,n:0,ok:0,incomplete:0,outside:0,missed:0,pending:0,unconfigured:0});by.set('',{name:'Por asignar',n:0,ok:0,incomplete:0,outside:0,missed:0,pending:0,unconfigured:0});for(const ev of evals){const val=by.get(ev.s.employeeId)||by.get('');val.n++;val[ev.status]++}return [...by.values()];}
 function renderReports(){const ev=getEvaluations(filterDate),stats=peopleStats(ev);const rows=stats.map(s=>{const expired=s.ok+s.incomplete+s.outside+s.missed;const pct=expired?`${(100*s.ok/expired).toFixed(1).replace('.',',')}%`:'Sin datos';return `<tr><td class="strong">${safe(s.name)}</td><td>${s.n}</td><td>${s.ok}</td><td>${s.outside}</td><td>${s.incomplete}</td><td>${s.missed}</td><td>${s.pending}</td><td>${s.unconfigured}</td><td class="highlight">${pct}</td></tr>`}).join('');return header('Informes mensuales','Informes de cumplimiento por trabajador y exportación de lecturas.',`<input type="month" id="month-filter" value="${filterDate}" aria-label="Mes"><button class="btn primary" data-action="xlsx">Descargar Excel (.xlsx)</button>`)+banner()+`<section class="panel"><div class="panel-head"><h2>Resumen por conserje</h2><span class="muted">${fmtDate(filterDate+'-01').slice(3)} · ${ev.length} rondas</span></div>${panelTable(['Conserje','Asignadas','Cumplidas','Fuera de horario','Incompletas','No realizadas','Pendientes','Sin configurar','% cumplimiento'],rows)}<p class="subhead">El porcentaje excluye pendientes y rondas sin configurar.</p></section>`;}
 function render(){if(route==='conserjes'){route='configuracion';tab='conserjes';history.replaceState(null,'','#configuracion')}if(typeof configurationRouteChanged==='function')configurationRouteChanged(route);toolbar();document.getElementById('app').innerHTML=({inicio:renderHome,lecturas:renderReadings,calendario:renderCalendar,configuracion:renderSettings,sincronizacion:renderSync,informes:renderReports}[route]||renderHome)();document.title=`${({inicio:'Inicio',lecturas:'Lecturas',calendario:'Calendario',conserjes:'Conserjes',configuracion:'Configuración',sincronizacion:'Sincronización',informes:'Informes'}[route]||'Inicio')} · Control de Rondas`}
-function navigate(to){route=to;location.hash=to;document.getElementById('sidebar').classList.remove('open');render()}
+function navigate(to){route=to;location.hash=to;setSidebarOpen(false);render()}
 function modal(title,fields,submitLabel,callback){const content=document.getElementById('modal-content');content.innerHTML=`<h2>${safe(title)}</h2><div class="forms">${fields.map(f=>`<label class="form-field ${f.full?'full':''}"><span>${safe(f.label)}</span>${f.type==='select'?`<select name="${f.name}">${f.options.map(([v,l])=>`<option value="${safe(v)}" ${String(f.value??'')===String(v)?'selected':''}>${safe(l)}</option>`).join('')}</select>`:`<input name="${f.name}" type="${f.type||'text'}" value="${safe(f.value??'')}" ${f.required?'required':''} ${f.placeholder?`placeholder="${safe(f.placeholder)}"`:''}>`}</label>`).join('')}</div><div class="modal-actions"><button class="btn" value="cancel" type="button" id="cancel-modal">Cancelar</button><button class="btn primary" type="submit">${safe(submitLabel)}</button></div>`;const dlg=document.getElementById('modal');const f=dlg.querySelector('form');f.onsubmit=(e)=>{e.preventDefault();if(!configurationRequire())return;const v=Object.fromEntries(new FormData(f).entries());const res=callback(v);if(res!==false){dlg.close();save();render()}};content.querySelector('#cancel-modal').onclick=()=>dlg.close();dlg.showModal()}
 function addEditPerson(pid){const p=current('employees').find(x=>x.id===pid);modal(p?'Editar conserje':'Agregar conserje',[{name:'name',label:'Nombre completo',value:p?.name,required:true}],p?'Guardar':'Agregar',v=>{if(!v.name.trim())return false;if(p)p.name=v.name.trim();else state.employees.push({id:id(),buildingId:state.activeId,name:v.name.trim(),active:true});toast('Conserje guardado')})}
 function addEditPoint(pid){
@@ -200,7 +200,20 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{if(e.target.id==='building-picker'){state.activeId=e.target.value;save();render()}if(e.target.id==='month-filter'){filterDate=e.target.value||dateParts().month;render()}if(e.target.id==='file-import'&&e.target.files?.[0])importFile(e.target.files[0])});
 document.addEventListener('input',e=>{if(e.target.id==='read-search'){readFilter=e.target.value;const pos=e.target.selectionStart;render();const el=document.getElementById('read-search');el.focus();el.setSelectionRange(pos,pos)}});
-document.getElementById('menu-button').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
-window.addEventListener('hashchange',()=>{route=(location.hash||'#inicio').slice(1);render()});
+function setSidebarOpen(open,restoreFocus=false){
+ const sidebar=document.getElementById('sidebar'),menu=document.getElementById('menu-button');
+ sidebar.classList.toggle('open',open);
+ document.getElementById('sidebar-backdrop').hidden=!open;
+ document.body.classList.toggle('sidebar-open',open);
+ menu.setAttribute('aria-expanded',String(open));
+ if(open)document.getElementById('sidebar-close').focus();
+ else if(restoreFocus)menu.focus();
+}
+document.getElementById('menu-button').onclick=()=>setSidebarOpen(!document.getElementById('sidebar').classList.contains('open'));
+document.getElementById('sidebar-close').onclick=()=>setSidebarOpen(false,true);
+document.getElementById('sidebar-backdrop').onclick=()=>setSidebarOpen(false,true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('sidebar').classList.contains('open'))setSidebarOpen(false,true)});
+window.matchMedia('(max-width:760px)').addEventListener('change',()=>setSidebarOpen(false));
+window.addEventListener('hashchange',()=>{setSidebarOpen(false);route=(location.hash||'#inicio').slice(1);render()});
 route=(location.hash||'#inicio').slice(1);render();
 // Interfaz estática con datos autenticados en Supabase.
