@@ -100,6 +100,10 @@ async function configRefresh(buildings, generation) {
 }
 async function configFlush() {
   if (!configAccount || configSending) return;
+  if (typeof configurationCanWrite === 'function' && !configurationCanWrite()) {
+    if (Object.keys(configPending).length) configMessage = 'Hay cambios guardados en este dispositivo. Desbloquea Configuración para enviarlos.';
+    return;
+  }
   configSending = true;
   const epoch = configEpoch;
   try {
@@ -139,7 +143,7 @@ function renderConfigCloudPanel() {
   return '<section class="panel"><h2>Configuración compartida</h2><p id="config-status" role="status">' + safe(configMessage) + '</p>' +
     '<p>Puntos RFID, conserjes, horarios, lectores y lecturas importadas se comparten con tu cuenta. El auxiliar envía las marcaciones aunque cierres esta web.</p>' +
     missing.map(buildingId => '<p>' + safe(state.buildings.find(b => b.id === buildingId)?.name || buildingId) +
-      ': aún no tiene configuración compartida.</p><button class="btn primary" data-config-migrate="' + safe(buildingId) + '">Compartir configuración de este navegador</button>').join('') +
+      ': aún no tiene configuración compartida.</p><a class="btn" href="#configuracion">Abrir Configuración para autorizar la copia</a>').join('') +
     (configConflicts.size ? '<div class="actions"><button class="btn" id="config-download">Descargar mis cambios pendientes</button>' +
       '<button class="btn" id="config-reload">Cargar versión de la nube</button></div>' : '') +
     '<p>El PC debe estar encendido y el lector conectado por USB. El servicio funciona sin iniciar sesión en Windows; el auxiliar de sesión requiere una sesión abierta. Sin internet conserva las lecturas y reintenta el envío.</p></section>';
@@ -147,6 +151,7 @@ function renderConfigCloudPanel() {
 document.addEventListener('click', async event => {
   const buildingId = event.target.dataset.configMigrate;
   if (buildingId && configAllowed.has(buildingId) && !configBases[buildingId] && !configPending[buildingId]) {
+    if (typeof configurationRequire === 'function' && !configurationRequire()) return;
     localStorage.setItem('control-rondas-respaldo-previo-migracion-' + configAccount + '-' + buildingId, JSON.stringify(configSnapshot(buildingId)));
     configPending[buildingId] = { revision: 0, data: configSnapshot(buildingId) };
     configCache();

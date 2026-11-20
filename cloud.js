@@ -1,5 +1,5 @@
 'use strict';
-const cloudClient = supabase.createClient('https://mqzhxhvtfszjypwumizl.supabase.co', 'sb_publishable_ds3d5rThhJvpcVfC7XfpUg_nM_FMVsw');
+const cloudClient = supabase.createClient('https://mqzhxhvtfszjypwumizl.supabase.co', 'sb_publishable_ds3d5rThhJvpcVfC7XfpUg_nM_FMVsw', {global:{fetch:configurationFetch}});
 let cloudUser = null;
 let cloudMessage = 'Inicia sesión para consultar las marcaciones recibidas.';
 let cloudBusy = false;
@@ -101,6 +101,7 @@ document.addEventListener('click', async event => {
     finally { button.disabled = false; }
   }
   if (event.target.id === 'cloud-logout') {
+    await configurationLock();
     const { error } = await cloudClient.auth.signOut();
     if (error) cloudStatus(error.message);
   }
@@ -109,6 +110,7 @@ cloudClient.auth.onAuthStateChange((_event, session) => {
   configSetAccount(session?.user);
   cloudGeneration++;
   cloudUser = session?.user || null;
+  configurationAccountChanged(cloudUser);
   cloudReadings = [];
   readerHealth = []; readerHealthError = "";
   cloudMessage = cloudUser ? 'Consultando las marcaciones…' : 'Inicia sesión para consultar las marcaciones recibidas.';
