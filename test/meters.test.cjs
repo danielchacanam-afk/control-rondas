@@ -37,3 +37,21 @@ test('todos los puntos obligatorios deben completarse; incompleta solo al vencer
 test('un punto sin configurar no se informa como no realizado',()=>{
  assert.equal(setup('2026-11','2026-12-01T00:00:00',[],['unknown']).run('getEvaluations(month)[0].status'),'unconfigured');
 });
+test('mañana cumplida no completa tarde; cada responsable conserva su propio estado',()=>{
+ const t=setup('2026-11','2026-11-28T18:00:00',[{code:'A1',timestamp:'2026-11-28T09:00:00'}]);
+ Object.assign(t.c.schedule,{employeeId:'one',employeeId2:'two',meterTimed:true,start:'08:00',end:'11:59',start2:'12:00',end2:'20:00'});
+ assert.equal(t.run('getEvaluations(month).length'),2);
+ assert.equal(t.run('getEvaluations(month)[0].s.employeeId'),'one');assert.equal(t.run('getEvaluations(month)[0].status'),'ok');assert.equal(t.run('getEvaluations(month)[0].date'),'2026-11-28');
+ assert.equal(t.run('getEvaluations(month)[1].s.employeeId'),'two');assert.equal(t.run('getEvaluations(month)[1].status'),'pending');
+ t.c.now='2026-12-01T00:00:00';assert.equal(t.run('getEvaluations(month)[1].status'),'missed');assert.equal(t.run('getEvaluations(month)[0].status'),'ok');
+ t.c.logs.push({code:'A1',timestamp:'2026-11-29T16:00:00'});assert.equal(t.run('getEvaluations(month)[1].status'),'ok');assert.equal(t.run('getEvaluations(month)[1].date'),'2026-11-29');assert.equal(t.run('getEvaluations(month).length'),2);
+});
+test('las marcas de mediodía pertenecen únicamente al turno de tarde y fuera de ambos no cumplen',()=>{
+ const t=setup('2026-11','2026-12-01T00:00:00',[{code:'A1',timestamp:'2026-11-28T12:00:00'},{code:'A1',timestamp:'2026-11-28T07:59:59'}]);
+ Object.assign(t.c.schedule,{employeeId:'one',employeeId2:'two',meterTimed:true,start:'08:00',end:'11:59',start2:'12:00',end2:'20:00'});
+ assert.equal(t.run('getEvaluations(month)[0].status'),'missed');assert.equal(t.run('getEvaluations(month)[1].status'),'ok');
+});
+test('un conserje con horario propio tampoco recibe marcas fuera de su turno',()=>{
+ const t=setup('2026-11','2026-12-01T00:00:00',[{code:'A1',timestamp:'2026-11-28T16:00:00'}]);Object.assign(t.c.schedule,{employeeId:'one',meterTimed:true,start:'08:00',end:'11:59'});
+ assert.equal(t.run('getEvaluations(month).length'),1);assert.equal(t.run('getEvaluations(month)[0].status'),'missed');
+});
