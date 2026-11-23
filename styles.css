@@ -19,3 +19,5 @@
 tbody tr.round-row:hover{background-color:var(--round-color)}
 .round-row td:first-child{border-left:4px solid #8fb17e}.round-afternoon td:first-child{border-left-color:#72b6d8}.round-night td:first-child{border-left-color:#929dcc}.round-mixed td:first-child{border-left-color:#7fae9d}
 .round-turn{font-weight:650;margin-bottom:5px}.round-period{display:inline-block;border-radius:99px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap}.round-period.morning{background:#dcebcf;color:#375725}.round-period.afternoon{background:#d5eaf7;color:#245778}.round-period.night{background:#dce0f4;color:#424975}
+
+.calendar-round{padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;line-height:1.4}.calendar-responsible{font-weight:650;overflow-wrap:anywhere}.calendar-round small{display:block;color:var(--muted)}.calendar-round .chip{white-space:normal;margin:2px 0}@media(max-width:760px){.calendar-round{font-size:10px}.calendar-responsible{display:block}}
