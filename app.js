@@ -173,7 +173,11 @@ function getEvaluations(month){
 }
 function evaluationLabel(e){return e.status==='outside'?'Completa · Fuera de horario':statusLabels[e.status]}
 function timingLabel(e){return e.timing==='outside'?'Fuera de horario':e.timing==='inside'||(e.count>0&&!e.timing)?'Dentro de horario':'Sin registros'}
-function evaluationBadge(e){return badge(e.status)+(e.timing==='outside'&&e.status!=='outside'?'<span class="chip off">Fuera de horario</span>':'')+(e.status!=='unconfigured'?'<span class="round-progress">'+e.count+'/'+e.total+'</span>':'')}
+function evaluationBadge(e){
+ const complete=e.status==='ok'||e.status==='outside';
+ return (complete?'<span class="chip ok">Completa</span>':badge(e.status))+((e.status==='outside'||e.timing==='outside')?'<span class="chip off">Fuera de horario</span>':'')+(e.status!=='unconfigured'?'<span class="round-progress">'+e.count+'/'+e.total+'</span>':'');
+}
+
 const schedLabel=s=>s.type==='meters'?'Lectura de Medidores · Una vez en los últimos 4 días del mes':`${dayTitle[s.type]} · ${s.turn} · ${s.start}–${s.end}${s.offset?' (+1 día)':''}`;
 function toolbar(){const sel=document.getElementById('building-picker');sel.innerHTML=state.buildings.map(b=>`<option value="${safe(b.id)}" ${b.id===state.activeId?'selected':''}>${safe(b.name)}${b.demo?' (DEMO)':''}</option>`).join('');document.getElementById('today-label').textContent=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short',year:'numeric'}).format(new Date());document.querySelectorAll('[data-route]').forEach(a=>a.classList.toggle('active',a.dataset.route===route));document.getElementById('breadcrumb').textContent=({inicio:'Panel general',lecturas:'Registros de lecturas',calendario:'Calendario mensual',conserjes:'Personal',configuracion:'Administración',sincronizacion:'Integraciones',informes:'Reportes'}[route]||'Panel general');}
 function header(title,description,actions='',eyebrow='CONTROL Y SUPERVISIÓN'){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${safe(title)}</h1><p class="desc">${description}</p></div><div class="actions">${actions}</div></div>`}
