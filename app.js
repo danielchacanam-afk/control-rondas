@@ -116,7 +116,7 @@ function renderCalendar(){const [y,m]=filterDate.split('-').map(Number),first=ne
 function renderPeople(){const list=current('employees');const rows=list.map(e=>`<tr><td class="value-strong">${safe(e.name)}</td><td>${e.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-person" data-id="${e.id}">Editar</button> <button class="btn small" data-action="toggle-person" data-id="${e.id}">${e.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');return `<div class="panel-head"><h2>Conserjes</h2><button class="btn primary" data-action="add-person">+ Agregar conserje</button><span class="muted">${list.filter(x=>x.active).length} activos</span></div>${panelTable(['Nombre completo','Estado','Acciones'],rows)}`}
 function renderSettings(){if(typeof configurationCanWrite!=='function'||!configurationCanWrite())return typeof renderConfigurationGate==='function'?renderConfigurationGate():header('Configuración','Cargando acceso protegido…');let inner='';
  if(tab==='rondas'){
- const rows=current('schedules').map(s=>`<tr><td>${safe(dayTitle[s.type])}</td><td>${safe(s.turn)}</td><td>${safe(s.start)}–${safe(s.end)} ${s.offset?'(+1 día)':''}</td><td>${safe(employee(s.employeeId)?.name||'Por asignar')}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Horarios de rondas</h2><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div>${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
+ const rows=current('schedules').map(s=>`<tr><td>${safe(dayTitle[s.type])}</td><td>${safe(s.turn)}</td><td>${safe(s.start)}–${safe(s.end)} ${s.offset?'(+1 día)':''}</td><td>${safe(employee(s.employeeId)?.name||'Por asignar')}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button> <button class="btn small danger" data-action="delete-round" data-id="${s.id}">Eliminar</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Horarios de rondas</h2><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div>${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
  }else if(tab==='puntos'){
  const rows=current('points').map(p=>`<tr><td class="value-strong">${safe(p.name)}</td><td><code>${safe(p.code||'Pendiente')}</code></td><td>${p.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-point" data-id="${p.id}">Editar</button> <button class="btn small" data-action="toggle-point" data-id="${p.id}">${p.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Etiquetas RFID</h2><button class="btn primary" data-action="add-point">+ Nuevo punto</button></div><p class="subhead">Asocia cada código RFID con el lugar físico. Nunca reutilices un código para dos puntos activos.</p>${panelTable(['Punto de control','Código RFID','Estado','Acciones'],rows)}`;
  }else if(tab==='conserjes'){inner=renderPeople();
@@ -194,6 +194,18 @@ function addEditRound(sid){const s=current('schedules').find(x=>x.id===sid);cons
  typeInput.addEventListener('change',updateMeterFields);updateMeterFields();
  const form=dlg.querySelector('form');const original=form.onsubmit;form.onsubmit=e=>{if(!configurationCanWrite()){e.preventDefault();configurationRequire();return}const values=[...form.querySelectorAll('[name="required"]:checked')].map(x=>x.value);if(!values.length){e.preventDefault();toast('Elige al menos un punto obligatorio');return}const target=s;const oldSubmit=original;original.call(form,e);if(!e.defaultPrevented)return;const last=target||current('schedules').at(-1);if(last)last.required=values;save();render()};
 }
+function deleteRound(sid){
+ const buildingId=state.activeId,s=current('schedules').find(x=>x.id===sid);if(!s)return;
+ modal('Eliminar ronda',[],'Eliminar',()=>{
+  if(state.activeId!==buildingId){toast('El edificio cambió. Vuelve a seleccionar la ronda.');return false}
+  const index=state.schedules.findIndex(x=>x.id===sid&&x.buildingId===buildingId);
+  if(index<0)return false;
+  state.schedules.splice(index,1);toast('Ronda eliminada');
+ });
+ const content=document.getElementById('modal-content');
+ content.querySelector('.forms').innerHTML='<p class="form-field full">¿Eliminar la ronda «'+safe(s.turn)+'» ('+safe(dayTitle[s.type])+')? Esta acción no se puede deshacer. La ronda dejará de aparecer en el calendario y en los informes, incluidos los meses anteriores. Las lecturas del dispositivo se conservan.</p>';
+ content.querySelector('[type="submit"]').className='btn danger';
+}
 function toggleIn(collection,pid){const obj=state[collection].find(x=>x.id===pid&&x.buildingId===state.activeId);if(obj){obj.active=!obj.active;save();render();toast('Estado actualizado')}}
 function normalizeTimestamp(s){const raw=String(s||'').trim();let m=raw.match(/^(\d{2})[-\/.](\d{2})[-\/.](\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);if(m)return `${m[3]}-${m[2]}-${m[1]}T${pad(m[4])}:${m[5]}:${m[6]||'00'}`;m=raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);if(m)return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]||'00'}`;return null}
 function parseCSV(text){const first=text.replace(/^\uFEFF/,'').split(/\r?\n/)[0]||'',sep=(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?';':',';const rows=[],arr=[];let cell='',inQ=false,row=[];const txt=text.replace(/^\uFEFF/,'');for(let i=0;i<txt.length;i++){const c=txt[i];if(c==='"'){if(inQ&&txt[i+1]==='"'){cell+='"';i++}else inQ=!inQ}else if(c===sep&&!inQ){row.push(cell);cell=''}else if((c==='\n'||c==='\r')&&!inQ){if(c==='\r'&&txt[i+1]==='\n')i++;row.push(cell);if(row.some(c=>c.trim()))rows.push(row);row=[];cell=''}else cell+=c}row.push(cell);if(row.some(c=>c.trim()))rows.push(row);return rows}
@@ -208,7 +220,7 @@ document.addEventListener('click',e=>{
  const nav=e.target.closest('[data-route-action]');if(nav){navigate(nav.dataset.routeAction);return}
  const tabs=e.target.closest('[data-tab]');if(tabs){if(!configurationRequire())return;tab=tabs.dataset.tab;render();return}
  const action=e.target.closest('[data-action]');if(!action)return;const act=action.dataset.action,pid=action.dataset.id;
- if(/^(add|edit|toggle)-(person|point|round|building|device)$/.test(act)||act==='import'){if(typeof configurationRequire!=='function'||!configurationRequire())return}
+ if(/^(add|edit|toggle|delete)-(person|point|round|building|device)$/.test(act)||act==='import'){if(typeof configurationRequire!=='function'||!configurationRequire())return}
  if(act==='add-person'||act==='edit-person')return addEditPerson(pid);
  if(act==='add-point'||act==='edit-point')return addEditPoint(pid);
  if(act==='add-round'||act==='edit-round')return addEditRound(pid);
@@ -217,6 +229,7 @@ document.addEventListener('click',e=>{
  if(act==='toggle-person')return toggleIn('employees',pid);
  if(act==='toggle-point')return toggleIn('points',pid);
  if(act==='toggle-round')return toggleIn('schedules',pid);
+ if(act==='delete-round')return deleteRound(pid);
  if(act==='toggle-device')return toggleIn('devices',pid);
  if(act==='import')return document.getElementById('file-import').click();
  if(act==='csv-lecturas')return downloadCSV(`lecturas-${filterDate}.csv`,[['Fecha y hora','Código','Punto de control','Equipo'],...readingsFiltered().map(r=>[fmtDT(r.timestamp),r.code,nameByCode(r.code),r.device])]);
