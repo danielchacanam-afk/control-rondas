@@ -12,7 +12,7 @@ function client(rpc=async()=>({data:{ok:true,permiso:'a'.repeat(64),vence_en:new
   cloudClient:{rpc},fetch:(...args)=>{requests.push(args);return Promise.resolve({ok:true})},
   setTimeout(){},setInterval(){},FormData:class{constructor(form){this.values=form.values}get(key){return this.values[key]}},
   document:{getElementById(id){if(!nodes.has(id))nodes.set(id,{open:false,textContent:'',close(){this.open=false}});return nodes.get(id)},
-   addEventListener(type,callback){handlers[type]=callback}},window:{addEventListener(){}},
+   addEventListener(type,callback){handlers[type]=callback}},window:{addEventListener(){},matchMedia(){return {addEventListener(){}}}},
   localStorage:{setItem(){throw Error('No se debe guardar el permiso ni la clave en localStorage')}}
  });
  vm.runInContext(source,context);
@@ -71,7 +71,7 @@ test('una respuesta de otra sesión no desbloquea la nueva cuenta',async()=>{
 test('el enlace anterior de Conserjes pasa por la pantalla protegida',()=>{
  const nodes=new Map(),location={hash:'#conserjes'};
  const document={querySelectorAll:()=>[],addEventListener(){},getElementById(id){if(!nodes.has(id))nodes.set(id,{classList:{remove(){}},innerHTML:'',textContent:''});return nodes.get(id)}};
- const context=vm.createContext({document,window:{addEventListener(){}},location,history:{replaceState(_a,_b,url){location.hash=url}},
+ const context=vm.createContext({document,window:{addEventListener(){},matchMedia(){return {addEventListener(){}}}},location,history:{replaceState(_a,_b,url){location.hash=url}},
   localStorage:{getItem:()=>null},configurationCanWrite:()=>false,renderConfigurationGate:()=>'<p>Pantalla protegida</p>',configurationRouteChanged(){},
   Date,Intl,Math,Map,Set});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../app.js'),'utf8'),context);
