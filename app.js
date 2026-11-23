@@ -56,21 +56,50 @@ const scheduleApplies=(type,date)=>{
  if(type==='fridaySunday')return day===0||day>=5;
  return type===dayType(date);
 };
+function rotationRule(s){
+ if(!s.rotationShift||typeof state==='undefined')return null;
+ const rule=state.buildings.find(b=>b.id===s.buildingId)?.weeklyRotation;
+ return rule&&rule.from&&rule.morningEmployeeId&&rule.afternoonEmployeeId?rule:null;
+}
+function rotationEmployee(s,date,shift){
+ const rule=rotationRule(s);
+ if(!rule||date<rule.from){if(s.meterRotating)return shift==='afternoon'?s.meterBaseEmployeeId2:s.meterBaseEmployeeId;return s.rotationShift==='meters'&&shift==='afternoon'?(s.employeeId2||s.employeeId):s.employeeId;}
+ const days=(Date.parse(date+'T00:00:00Z')-Date.parse(rule.from+'T00:00:00Z'))/86400000;
+ const alternate=Math.floor(days/7)%2===1;
+ return (shift==='morning')!==alternate?rule.morningEmployeeId:rule.afternoonEmployeeId;
+}
+function resolveSchedule(s,date){
+ if(!['morning','afternoon'].includes(s.rotationShift))return s;
+ return {...s,employeeId:rotationEmployee(s,date,s.rotationShift)};
+}
+function rotationLabel(s){const rule=rotationRule(s);if(!rule)return employee(s.employeeId)?.name||'Por asignar';const date=dateParts().today;return (employee(rotationEmployee(s,date,s.rotationShift))?.name||'Por asignar')+' · Rotación semanal'}
 function meterWindow(month){
  const [year,monthNumber]=month.split('-').map(Number),last=new Date(year,monthNumber,0).getDate();
  return {start:month+'-'+pad(last-3)+'T00:00:00',end:month+'-'+pad(last)+'T23:59:59'};
 }
-function meterAssignments(s){
+function meterAssignments(s,month){
+ const rule=rotationRule(s);
+ if(rule&&s.rotationShift==='meters'&&month&&meterWindow(month).end.slice(0,10)>=rule.from){
+  return [rule.morningEmployeeId,rule.afternoonEmployeeId].map(employeeId=>({...s,meterBaseEmployeeId:s.employeeId,meterBaseEmployeeId2:s.employeeId2,employeeId,meterRotating:true,meterTimed:false,turn:'Lectura de Medidores · Rotación semanal'}));
+ }
+
  const morning={...s,turn:'Lectura de Medidores · Mañana',start:'08:00',end:'15:00',meterTimed:true,endExclusive:true};
  if(!s.employeeId2)return [morning];
  return [morning,{...s,turn:'Lectura de Medidores · Tarde',employeeId:s.employeeId2,start:'15:00',end:'22:00',meterTimed:true,endExclusive:false}];
 }
-function meterResponsible(s){return meterAssignments(s).map(a=>(employee(a.employeeId)?.name||'Por asignar')+(a.meterTimed?' ('+a.start+'–'+a.end+')':'')).join(' / ')}
+function meterResponsible(s){const rule=rotationRule(s);if(rule&&s.rotationShift==='meters')return (employee(rule.morningEmployeeId)?.name||'Por asignar')+' / '+(employee(rule.afternoonEmployeeId)?.name||'Por asignar')+' · Rotación semanal';return meterAssignments(s).map(a=>(employee(a.employeeId)?.name||'Por asignar')+(a.meterTimed?' ('+a.start+'–'+a.end+')':'')).join(' / ')}
+function meterReadingOwner(s,timestamp){
+ const time=timestamp.slice(11,19),date=timestamp.slice(0,10),rule=rotationRule(s);
+ if(rule&&date>=rule.from&&!(rule.workDays||[1,2,3,4,5,6]).includes(toDate(date).getDay()))return null;
+ if(time>='08:00:00'&&time<'15:00:00')return rotationEmployee(s,date,'morning');
+ if(time>='15:00:00'&&time<='22:00:00')return rotationEmployee(s,date,'afternoon');
+ return null;
+}
 function evaluateMeters(month,s,now=dtISO(new Date())){
  const w=meterWindow(month);if(s.meterTimed){w.start=w.start.slice(0,10)+'T'+s.start+':00';w.end=w.end.slice(0,10)+'T'+s.end+':00'}const expected=s.required.map(point),valid=expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!=='');
  const result={date:w.end.slice(0,10),window:w,s,status:'unconfigured',count:0,total:expected.length,visits:[],missing:expected.filter(Boolean)};
  if(!valid)return result;
- const logs=current('readings').filter(r=>r.timestamp>=w.start&&r.timestamp<=w.end&&r.timestamp<=now&&(!s.meterTimed||(r.timestamp.slice(11,19)>=s.start+':00'&&(s.endExclusive?r.timestamp.slice(11,19)<s.end+':00':r.timestamp.slice(11,19)<=s.end+':00')))).slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+ const logs=current('readings').filter(r=>r.timestamp>=w.start&&r.timestamp<=w.end&&r.timestamp<=now&&(!s.meterRotating||meterReadingOwner(s,r.timestamp)===s.employeeId)&&(!s.meterTimed||(r.timestamp.slice(11,19)>=s.start+':00'&&(s.endExclusive?r.timestamp.slice(11,19)<s.end+':00':r.timestamp.slice(11,19)<=s.end+':00')))).slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
  const codes=new Set();let completed='';
  for(const log of logs){codes.add(String(log.code).toUpperCase());if(expected.every(p=>codes.has(p.code.toUpperCase()))){completed=log.timestamp.slice(0,10);break}}
  result.visits=expected.filter(p=>codes.has(p.code.toUpperCase()));result.count=result.visits.length;result.missing=expected.filter(p=>!codes.has(p.code.toUpperCase()));
@@ -84,7 +113,7 @@ const getWindow=(date,s)=>{
  return {start:st,end:en};
 };
 function evaluate(date,s,now=dtISO(new Date())){
- const w=getWindow(date,s), expected=s.required.map(point),valid=expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!=='');
+ s=resolveSchedule(s,addDays(date,s.offset||0));const w=getWindow(date,s), expected=s.required.map(point),valid=expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!=='');
  if(!valid)return {date,window:w,s,status:'unconfigured',count:0,total:expected.length,visits:[]};
  if(now<w.end)return {date,window:w,s,status:'pending',count:0,total:expected.length,visits:[]};
  const logs=current('readings').filter(r=>r.timestamp>=w.start&&r.timestamp<=w.end);
@@ -97,7 +126,7 @@ function evaluate(date,s,now=dtISO(new Date())){
  }
  return {date,window:w,s,status,count:visited.length,total:expected.length,visits:visited,missing:expected.filter(p=>!codes.has(p.code.toUpperCase()))};
 }
-function getEvaluations(month){const monthly=activeSchedules().filter(s=>s.type==='meters').flatMap(s=>meterAssignments(s).map(a=>evaluateMeters(month,a)));const [y,m]=month.split('-').map(Number),n=new Date(y,m,0).getDate(),arr=[...monthly];for(let d=1;d<=n;d++){const day=`${y}-${pad(m)}-${pad(d)}`;for(const s of activeSchedules().filter(x=>scheduleApplies(x.type,day)))arr.push(evaluate(day,s))}return arr}
+function getEvaluations(month){const monthly=activeSchedules().filter(s=>s.type==='meters').flatMap(s=>meterAssignments(s,month).map(a=>evaluateMeters(month,a)));const [y,m]=month.split('-').map(Number),n=new Date(y,m,0).getDate(),arr=[...monthly];for(let d=1;d<=n;d++){const day=`${y}-${pad(m)}-${pad(d)}`;for(const s of activeSchedules().filter(x=>scheduleApplies(x.type,day)))arr.push(evaluate(day,s))}return arr}
 const schedLabel=s=>s.type==='meters'?'Lectura de Medidores · Una vez en los últimos 4 días del mes':`${dayTitle[s.type]} · ${s.turn} · ${s.start}–${s.end}${s.offset?' (+1 día)':''}`;
 function toolbar(){const sel=document.getElementById('building-picker');sel.innerHTML=state.buildings.map(b=>`<option value="${safe(b.id)}" ${b.id===state.activeId?'selected':''}>${safe(b.name)}${b.demo?' (DEMO)':''}</option>`).join('');document.getElementById('today-label').textContent=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short',year:'numeric'}).format(new Date());document.querySelectorAll('[data-route]').forEach(a=>a.classList.toggle('active',a.dataset.route===route));document.getElementById('breadcrumb').textContent=({inicio:'Panel general',lecturas:'Registros de lecturas',calendario:'Calendario mensual',conserjes:'Personal',configuracion:'Administración',sincronizacion:'Integraciones',informes:'Reportes'}[route]||'Panel general');}
 function header(title,description,actions='',eyebrow='CONTROL Y SUPERVISIÓN'){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${safe(title)}</h1><p class="desc">${description}</p></div><div class="actions">${actions}</div></div>`}
@@ -126,9 +155,10 @@ function roundPeriod(s){
  return start>='08:00'&&start<='15:00'?'morning':start>'15:00'&&start<='22:00'?'afternoon':'night';
 }
 function roundPeriodBadge(s){const period=roundPeriod(s),labels={morning:'Mañana',afternoon:'Tarde',night:'Noche'};return period==='mixed'?'<span class="round-period morning">☀ Mañana</span> <span class="round-period afternoon">☀ Tarde</span>':'<span class="round-period '+period+'">'+(period==='night'?'☾':'☀')+' '+labels[period]+'</span>'}
+function renderRotationNotice(){const rule=bld().weeklyRotation;if(!rule)return '';return '<p class="readme">Rotación semanal desde el lunes '+safe(fmtDate(rule.from))+': <strong>'+safe(employee(rule.morningEmployeeId)?.name||'Por asignar')+'</strong> de mañana y <strong>'+safe(employee(rule.afternoonEmployeeId)?.name||'Por asignar')+'</strong> de tarde en la semana inicial. Se intercambian cada lunes. Aplica a las rondas marcadas como rotativas.</p>'}
 function renderSettings(){if(typeof configurationCanWrite!=='function'||!configurationCanWrite())return typeof renderConfigurationGate==='function'?renderConfigurationGate():header('Configuración','Cargando acceso protegido…');let inner='';
  if(tab==='rondas'){
- const rows=current('schedules').map(s=>`<tr class="round-row round-${roundPeriod(s)}"><td>${safe(dayTitle[s.type])}</td><td><div class="round-turn">${safe(s.turn)}</div>${roundPeriodBadge(s)}</td><td>${s.type==='meters'?'08:00–15:00'+(s.employeeId2?' / 15:00–22:00':''):safe(s.start)+'–'+safe(s.end)+(s.offset?' (+1 día)':'')}</td><td>${safe(s.type==='meters'?meterResponsible(s):employee(s.employeeId)?.name||'Por asignar')}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button> <button class="btn small danger" data-action="delete-round" data-id="${s.id}">Eliminar</button></td></tr>`).join('');inner=`<div class="panel-head"><div><h2>Horarios de rondas</h2><p class="subhead">El fondo indica mañana, tarde o noche según la hora de inicio.</p></div><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div>${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
+ const rows=current('schedules').map(s=>`<tr class="round-row round-${roundPeriod(s)}"><td>${safe(dayTitle[s.type])}</td><td><div class="round-turn">${safe(s.turn)}</div>${roundPeriodBadge(s)}</td><td>${s.type==='meters'?'08:00–15:00'+(s.employeeId2?' / 15:00–22:00':''):safe(s.start)+'–'+safe(s.end)+(s.offset?' (+1 día)':'')}</td><td>${safe(s.type==='meters'?meterResponsible(s):rotationLabel(s))}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button> <button class="btn small danger" data-action="delete-round" data-id="${s.id}">Eliminar</button></td></tr>`).join('');inner=`<div class="panel-head"><div><h2>Horarios de rondas</h2><p class="subhead">El fondo indica mañana, tarde o noche según la hora de inicio.</p></div><div class="actions"><button class="btn" data-action="weekly-rotation">Rotación semanal</button><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div></div>${renderRotationNotice()}${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
  }else if(tab==='puntos'){
  const rows=current('points').map(p=>`<tr><td class="value-strong">${safe(p.name)}</td><td><code>${safe(p.code||'Pendiente')}</code></td><td>${p.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-point" data-id="${p.id}">Editar</button> <button class="btn small" data-action="toggle-point" data-id="${p.id}">${p.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Etiquetas RFID</h2><button class="btn primary" data-action="add-point">+ Nuevo punto</button></div><p class="subhead">Asocia cada código RFID con el lugar físico. Nunca reutilices un código para dos puntos activos.</p>${panelTable(['Punto de control','Código RFID','Estado','Acciones'],rows)}`;
  }else if(tab==='conserjes'){inner=renderPeople();
@@ -199,7 +229,7 @@ function addEditBuilding(bid){const b=state.buildings.find(x=>x.id===bid);modal(
 function addEditDevice(did){const d=current('devices').find(x=>x.id===did);modal(d?'Editar lector':'Agregar lector',[{name:'model',label:'Modelo del lector',value:d?.model||'JWM 5000V1',required:true},{name:'serial',label:'Número de equipo',value:d?.serial,required:true}],d?'Guardar':'Agregar',v=>{if(!v.model.trim()||!v.serial.trim())return false;if(current('devices').some(q=>q.id!==did&&q.serial===v.serial.trim())){toast('Ese equipo ya está registrado');return false}if(d)Object.assign(d,{model:v.model.trim(),serial:v.serial.trim()});else state.devices.push({id:id(),buildingId:state.activeId,model:v.model.trim(),serial:v.serial.trim(),active:true});toast('Lector guardado')})}
 function addEditRound(sid){
  const s=current('schedules').find(x=>x.id===sid),pts=activePoints(),people=[['','Por asignar'],...current('employees').filter(x=>x.active||x.id===s?.employeeId||x.id===s?.employeeId2).map(p=>[p.id,p.name])];
- const fields=[{name:'type',label:'Tipo de día',type:'select',value:s?.type||'weekday',options:Object.entries(dayTitle)},
+ const fields=[{name:'rotationShift',label:'Asignación semanal',type:'select',value:s?.rotationShift||'',options:[['','Responsable fijo'],['morning','Mañana rotativa'],['afternoon','Tarde rotativa'],['meters','Medidores: ambos conserjes rotativos']]},{name:'type',label:'Tipo de día',type:'select',value:s?.type||'weekday',options:Object.entries(dayTitle)},
  {name:'turn',label:'Nombre del turno',value:s?.turn||'Mañana',required:true},
  {name:'start',label:'Hora de inicio',type:'time',value:s?.start||'10:00',required:true},
  {name:'end',label:'Hora de término',type:'time',value:s?.end||'11:00',required:true},
@@ -210,10 +240,11 @@ function addEditRound(sid){
  modal(s?'Editar ronda':'Agregar ronda',fields,s?'Guardar':'Crear',v=>{
   const monthly=v.type==='meters',required=[...dlg.querySelectorAll('[name="required"]:checked')].map(x=>x.value);
   if(!required.length){toast('Elige al menos un punto obligatorio');return false}
-  const val={type:v.type,turn:monthly?'Lectura de Medidores':v.turn.trim(),start:monthly?'08:00':v.start,end:monthly?'15:00':v.end,offset:monthly?0:Number(v.offset),employeeId:v.employeeId,employeeId2:monthly?v.employeeId2:'',meterTimed:monthly,start2:monthly?'15:00':'',end2:monthly?'22:00':'',required};
+  if(v.rotationShift&&(!bld().weeklyRotation||monthly!==(v.rotationShift==='meters'))){toast('Configura la rotación semanal y elige una opción acorde al tipo de ronda');return false}
+  const val={rotationShift:v.rotationShift,type:v.type,turn:monthly?'Lectura de Medidores':v.turn.trim(),start:monthly?'08:00':v.start,end:monthly?'15:00':v.end,offset:monthly?0:Number(v.offset),employeeId:v.employeeId,employeeId2:monthly?v.employeeId2:'',meterTimed:monthly,start2:monthly?'15:00':'',end2:monthly?'22:00':'',required};
   if(!val.turn||!val.start||!val.end){toast('Completa los campos de la ronda');return false}
   if(monthly){
-   if(val.employeeId2&&(!val.employeeId||val.employeeId===val.employeeId2)){toast('Selecciona dos conserjes distintos');return false}
+   if(!v.rotationShift&&val.employeeId2&&(!val.employeeId||val.employeeId===val.employeeId2)){toast('Selecciona dos conserjes distintos');return false}
   }
   if(s)Object.assign(s,val);else state.schedules.push({id:id(),buildingId:state.activeId,active:true,...val});toast('Ronda guardada');
  });
@@ -227,6 +258,14 @@ function addEditRound(sid){
   }
  };
  typeInput.addEventListener('change',update);node.querySelector('[name="employeeId2"]').addEventListener('change',update);update();
+}
+function editWeeklyRotation(){
+ const rule=bld().weeklyRotation||{},people=[['','Seleccionar'],...current('employees').filter(p=>p.active).map(p=>[p.id,p.name])];
+ modal('Rotación semanal',[{name:'from',label:'Lunes de inicio',type:'date',value:rule.from||'2026-11-23',required:true},{name:'morningEmployeeId',label:'Mañana en la semana inicial',type:'select',value:rule.morningEmployeeId||'',options:people},{name:'afternoonEmployeeId',label:'Tarde en la semana inicial',type:'select',value:rule.afternoonEmployeeId||'',options:people}],'Guardar',v=>{
+  if(toDate(v.from).getDay()!==1||!v.morningEmployeeId||!v.afternoonEmployeeId||v.morningEmployeeId===v.afternoonEmployeeId){toast('Elige un lunes y dos conserjes distintos');return false}
+  bld().weeklyRotation={from:v.from,morningEmployeeId:v.morningEmployeeId,afternoonEmployeeId:v.afternoonEmployeeId,workDays:[1,2,3,4,5,6]};toast('Rotación semanal guardada');
+ });
+ document.getElementById('modal-content').insertAdjacentHTML('beforeend','<p class="readme">Los responsables se intercambian cada lunes a partir de la fecha indicada. Esta rotación corresponde a lunes a sábado; los domingos quedan fuera de la lectura de medidores de estos dos conserjes. En cada ronda puedes seleccionar responsable fijo, mañana rotativa, tarde rotativa o medidores rotativos. Las fechas anteriores conservan su asignación original.</p>');
 }
 function deleteRound(sid){
  const buildingId=state.activeId,s=current('schedules').find(x=>x.id===sid);if(!s)return;
@@ -246,15 +285,15 @@ function parseCSV(text){const first=text.replace(/^\uFEFF/,'').split(/\r?\n/)[0]
 function importFile(file){const reader=new FileReader();reader.onload=()=>{try{const rows=parseCSV(String(reader.result));if(rows.length<2){toast('CSV sin registros');return}const headers=rows[0].map(x=>x.toLowerCase().trim()),index=names=>headers.findIndex(h=>names.some(n=>h.includes(n)));let iDate=index(['fecha','timestamp','date']),iCode=index(['código','codigo','rfid','code']),iDevice=index(['equipo','device','lector']);if(iDate<0)iDate=0;if(iCode<0)iCode=1;if(iDevice<0)iDevice=3;let added=0,duplicated=0,invalid=0;const keys=new Set(state.readings.filter(belongs).map(r=>[r.device,r.timestamp,r.code].join('|')));for(const row of rows.slice(1)){const timestamp=normalizeTimestamp(row[iDate]),code=(row[iCode]||'').trim().toUpperCase(),device=(row[iDevice]||'').trim()||'Sin identificar';if(!timestamp||!code){invalid++;continue}const key=[device,timestamp,code].join('|');if(keys.has(key)){duplicated++;continue}state.readings.push({id:id(),buildingId:state.activeId,timestamp,code,device,demo:false,source:'csv'});keys.add(key);added++}save();render();toast(`Importación: ${added} nuevos, ${duplicated} duplicados y ${invalid} inválidos`)}catch(e){toast('No se pudo leer el CSV: '+e.message)}};reader.readAsText(file,'UTF-8')}
 function downloadCSV(name,rows){const esc=x=>`"${String(x??'').replace(/"/g,'""')}"`,content='\uFEFF'+rows.map(r=>r.map(esc).join(';')).join('\r\n');const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});downloadBlob(name,blob)}
 function downloadBlob(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)}
-function reportData(){const evals=getEvaluations(filterDate),c=current('points'),people=peopleStats(evals);const calendar=[['Fecha','Día','Turno','Inicio','Fin','Responsable',...c.filter(p=>p.active).map(p=>p.name),'Puntos revisados','Puntos exigidos','Estado','Observación']];for(const e of evals)calendar.push([fmtDate(e.date),weekdays[toDate(e.date).getDay()],e.s.turn,e.window.start.slice(11,16),e.window.end.slice(11,16),employee(e.s.employeeId)?.name||'Por asignar',...c.filter(p=>p.active).map(p=>e.status==='unconfigured'?'Sin configurar':e.visits?.some(v=>v.id===p.id)?'Revisado':'No registrado'),e.count,e.total,statusLabels[e.status],(e.s.type==='meters'?'Una vez entre '+fmtDate(e.window.start.slice(0,10))+' y '+fmtDate(e.window.end.slice(0,10))+'. ':'')+(e.missing?.map(p=>p.name).join(', ')||'')]);const reads=[['Fecha y hora','Código','Punto de control','Equipo'],...current('readings').slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).map(r=>[fmtDT(r.timestamp),r.code,nameByCode(r.code),r.device])];const config=[['Día','Turno','Inicio','Fin','Desfase día','Conserje','Puntos obligatorios'],...current('schedules').map(s=>[dayTitle[s.type],s.turn,s.start,s.end,s.offset,s.type==='meters'?meterResponsible(s):employee(s.employeeId)?.name||'Por asignar',s.required.map(pid=>point(pid)?.name||pid).join(', ')]),[],['Código','Punto de control'],...c.map(p=>[p.code,p.name])];const summary=[['Conserje asignado','Asignadas','Cumplidas','Fuera de horario','Incompletas','No realizadas','Pendientes','Sin configurar','% cumplimiento'],...people.map(s=>{const n=s.ok+s.incomplete+s.outside+s.missed;return [s.name,s.n,s.ok,s.outside,s.incomplete,s.missed,s.pending,s.unconfigured,n?Number((100*s.ok/n).toFixed(1))/100:'Sin datos']})];return [['Calendario mensual',calendar],['Lecturas',reads],['Configuración',config],['Resumen por conserje',summary]]}
+function reportData(){const evals=getEvaluations(filterDate),c=current('points'),people=peopleStats(evals);const calendar=[['Fecha','Día','Turno','Inicio','Fin','Responsable',...c.filter(p=>p.active).map(p=>p.name),'Puntos revisados','Puntos exigidos','Estado','Observación']];for(const e of evals)calendar.push([fmtDate(e.date),weekdays[toDate(e.date).getDay()],e.s.turn,e.window.start.slice(11,16),e.window.end.slice(11,16),employee(e.s.employeeId)?.name||'Por asignar',...c.filter(p=>p.active).map(p=>e.status==='unconfigured'?'Sin configurar':e.visits?.some(v=>v.id===p.id)?'Revisado':'No registrado'),e.count,e.total,statusLabels[e.status],(e.s.type==='meters'?'Una vez entre '+fmtDate(e.window.start.slice(0,10))+' y '+fmtDate(e.window.end.slice(0,10))+'. ':'')+(e.missing?.map(p=>p.name).join(', ')||'')]);const reads=[['Fecha y hora','Código','Punto de control','Equipo'],...current('readings').slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).map(r=>[fmtDT(r.timestamp),r.code,nameByCode(r.code),r.device])];const config=[['Día','Turno','Inicio','Fin','Desfase día','Conserje','Puntos obligatorios'],...current('schedules').map(s=>[dayTitle[s.type],s.turn,s.start,s.end,s.offset,s.type==='meters'?meterResponsible(s):rotationLabel(s),s.required.map(pid=>point(pid)?.name||pid).join(', ')]),[],['Código','Punto de control'],...c.map(p=>[p.code,p.name])];const summary=[['Conserje asignado','Asignadas','Cumplidas','Fuera de horario','Incompletas','No realizadas','Pendientes','Sin configurar','% cumplimiento'],...people.map(s=>{const n=s.ok+s.incomplete+s.outside+s.missed;return [s.name,s.n,s.ok,s.outside,s.incomplete,s.missed,s.pending,s.unconfigured,n?Number((100*s.ok/n).toFixed(1))/100:'Sin datos']})];return [['Calendario mensual',calendar],['Lecturas',reads],['Configuración',config],['Resumen por conserje',summary]]}
 function exportXLSX(){if(!window.XLSX){toast('No se cargó la biblioteca de Excel; revisa tu conexión a internet');return}const wb=XLSX.utils.book_new();for(const [name,data] of reportData()){const ws=XLSX.utils.aoa_to_sheet(data);ws['!cols']=data[0].map((v,i)=>({wch:Math.min(36,Math.max(15,String(v||'').length+4))}));XLSX.utils.book_append_sheet(wb,ws,name)}XLSX.writeFile(wb,`control-rondas-${bld().name.replace(/[^a-z0-9]/gi,'-')}-${filterDate}.xlsx`);toast('Informe Excel generado')}
-function dayDetails(day){const es=getEvaluations(day.slice(0,7)).filter(e=>e.date===day);const dlg=document.getElementById('modal');const node=document.getElementById('modal-content');node.innerHTML=`<h2>Rondas del ${fmtDate(day)}</h2>${es.map(e=>`<div style="padding:10px 0;border-bottom:1px solid var(--border)"><b>${safe(e.s.turn)} · ${e.s.type==='meters'?fmtDate(e.window.start.slice(0,10))+' al '+fmtDate(e.window.end.slice(0,10))+' · '+e.s.start+'–'+e.s.end:e.window.start.slice(11,16)+'–'+e.window.end.slice(11,16)}</b><p>${badge(e.status)} · ${e.count}/${e.total} puntos</p><p class="muted">${safe(employee(e.s.employeeId)?.name||'Por asignar')}</p>${e.missing?.length?`<p class="muted">Faltantes: ${e.missing.map(p=>safe(p.name)).join(', ')}</p>`:''}</div>`).join('')}<div class="modal-actions"><button class="btn" type="button" id="done-day">Cerrar</button></div>`;node.querySelector('#done-day').onclick=()=>dlg.close();dlg.showModal()}
+function dayDetails(day){const es=getEvaluations(day.slice(0,7)).filter(e=>e.date===day);const dlg=document.getElementById('modal');const node=document.getElementById('modal-content');node.innerHTML=`<h2>Rondas del ${fmtDate(day)}</h2>${es.map(e=>`<div style="padding:10px 0;border-bottom:1px solid var(--border)"><b>${safe(e.s.turn)} · ${e.s.type==='meters'?fmtDate(e.window.start.slice(0,10))+' al '+fmtDate(e.window.end.slice(0,10))+' · '+(e.s.meterRotating?'Horario según rotación semanal':e.s.start+'–'+e.s.end):e.window.start.slice(11,16)+'–'+e.window.end.slice(11,16)}</b><p>${badge(e.status)} · ${e.count}/${e.total} puntos</p><p class="muted">${safe(employee(e.s.employeeId)?.name||'Por asignar')}</p>${e.missing?.length?`<p class="muted">Faltantes: ${e.missing.map(p=>safe(p.name)).join(', ')}</p>`:''}</div>`).join('')}<div class="modal-actions"><button class="btn" type="button" id="done-day">Cerrar</button></div>`;node.querySelector('#done-day').onclick=()=>dlg.close();dlg.showModal()}
 function demo(){if(state.buildings.some(b=>b.demo)){state.activeId=state.buildings.find(b=>b.demo).id;save();render();return}const buildingId='demostracion';state.buildings.push({id:buildingId,name:'Edificio demostración',demo:true});const ps=['Sala de bombas','Grupo electrógeno','Estacionamiento -1','Sala de basura'].map((name,i)=>({id:id(),buildingId,name,code:`D0${i+1}A`,active:true}));state.points.push(...ps);const em=id();state.employees.push({id:em,buildingId,name:'Conserje de prueba',active:true});const now=dateParts().today;for(const type of ['weekday','saturday','sunday'])state.schedules.push({id:id(),buildingId,type,turn:'Mañana',start:'10:00',end:'11:15',offset:0,employeeId:em,required:ps.map(p=>p.id),active:true});const start=addDays(now,-1),t=dayType(start);for(let i=0;i<4;i++){state.readings.push({id:id(),buildingId,timestamp:`${start}T10:${pad(5+i*3)}:00`,code:ps[i].code,device:'DEMO-01',demo:true,source:'demo'})}state.activeId=buildingId;filterDate=start.slice(0,7);save();render();toast('Se creó un edificio de demostración independiente. Todos sus registros son ficticios.')}
 document.addEventListener('click',e=>{
  const nav=e.target.closest('[data-route-action]');if(nav){navigate(nav.dataset.routeAction);return}
  const tabs=e.target.closest('[data-tab]');if(tabs){if(!configurationRequire())return;tab=tabs.dataset.tab;render();return}
  const action=e.target.closest('[data-action]');if(!action)return;const act=action.dataset.action,pid=action.dataset.id;
- if(/^(add|edit|toggle|delete)-(person|point|round|building|device)$/.test(act)||act==='import'){if(typeof configurationRequire!=='function'||!configurationRequire())return}
+ if(/^(add|edit|toggle|delete)-(person|point|round|building|device)$/.test(act)||act==='import'||act==='weekly-rotation'){if(typeof configurationRequire!=='function'||!configurationRequire())return}
  if(act==='add-person'||act==='edit-person')return addEditPerson(pid);
  if(act==='add-point'||act==='edit-point')return addEditPoint(pid);
  if(act==='add-round'||act==='edit-round')return addEditRound(pid);
@@ -263,6 +302,7 @@ document.addEventListener('click',e=>{
  if(act==='toggle-person')return toggleIn('employees',pid);
  if(act==='toggle-point')return toggleIn('points',pid);
  if(act==='toggle-round')return toggleIn('schedules',pid);
+ if(act==='weekly-rotation')return editWeeklyRotation();
  if(act==='delete-round')return deleteRound(pid);
  if(act==='toggle-device')return toggleIn('devices',pid);
  if(act==='import')return document.getElementById('file-import').click();
