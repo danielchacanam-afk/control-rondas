@@ -7,3 +7,5 @@
 .rfid-hint{margin:8px 0 0;font-size:12px;line-height:1.45;color:var(--muted,#586c79)}
 
 .sidebar-close,.sidebar-backdrop{display:none}@media(max-width:760px){body.sidebar-open{overflow:hidden}.sidebar{width:min(280px,85vw);overflow-y:auto;min-height:0;padding-top:64px}.sidebar-close{display:grid;place-items:center;position:absolute;top:12px;right:12px;width:40px;height:40px;border:1px solid #42606b;border-radius:8px;background:#244652;color:#fff;font-size:28px;line-height:1}.sidebar-backdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:14;border:0;background:#102c3980}.sidebar-backdrop[hidden]{display:none}}
+
+.form-field .required-point{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:400;min-width:0;cursor:pointer;padding:4px 0}.form-field .required-point input[type="checkbox"]{width:16px;height:16px;flex:0 0 16px;margin:0;padding:0;accent-color:var(--teal)}.required-point span{overflow-wrap:anywhere}
