@@ -61,19 +61,20 @@ function meterWindow(month){
  return {start:month+'-'+pad(last-3)+'T00:00:00',end:month+'-'+pad(last)+'T23:59:59'};
 }
 function meterAssignments(s){
- if(!s.employeeId2)return [s];
- return [{...s,turn:'Lectura de Medidores · Mañana',meterTimed:true},{...s,turn:'Lectura de Medidores · Tarde',employeeId:s.employeeId2,start:s.start2,end:s.end2,meterTimed:true}];
+ const morning={...s,turn:'Lectura de Medidores · Mañana',start:'08:00',end:'15:00',meterTimed:true,endExclusive:true};
+ if(!s.employeeId2)return [morning];
+ return [morning,{...s,turn:'Lectura de Medidores · Tarde',employeeId:s.employeeId2,start:'15:00',end:'22:00',meterTimed:true,endExclusive:false}];
 }
 function meterResponsible(s){return meterAssignments(s).map(a=>(employee(a.employeeId)?.name||'Por asignar')+(a.meterTimed?' ('+a.start+'–'+a.end+')':'')).join(' / ')}
 function evaluateMeters(month,s,now=dtISO(new Date())){
- const w=meterWindow(month);if(s.meterTimed){w.start=w.start.slice(0,10)+'T'+s.start+':00';w.end=w.end.slice(0,10)+'T'+s.end+':59'}const expected=s.required.map(point),valid=expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!=='');
+ const w=meterWindow(month);if(s.meterTimed){w.start=w.start.slice(0,10)+'T'+s.start+':00';w.end=w.end.slice(0,10)+'T'+s.end+':00'}const expected=s.required.map(point),valid=expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!=='');
  const result={date:w.end.slice(0,10),window:w,s,status:'unconfigured',count:0,total:expected.length,visits:[],missing:expected.filter(Boolean)};
  if(!valid)return result;
- const logs=current('readings').filter(r=>r.timestamp>=w.start&&r.timestamp<=w.end&&r.timestamp<=now&&(!s.meterTimed||(r.timestamp.slice(11,16)>=s.start&&r.timestamp.slice(11,16)<=s.end))).slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+ const logs=current('readings').filter(r=>r.timestamp>=w.start&&r.timestamp<=w.end&&r.timestamp<=now&&(!s.meterTimed||(r.timestamp.slice(11,19)>=s.start+':00'&&(s.endExclusive?r.timestamp.slice(11,19)<s.end+':00':r.timestamp.slice(11,19)<=s.end+':00')))).slice().sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
  const codes=new Set();let completed='';
  for(const log of logs){codes.add(String(log.code).toUpperCase());if(expected.every(p=>codes.has(p.code.toUpperCase()))){completed=log.timestamp.slice(0,10);break}}
  result.visits=expected.filter(p=>codes.has(p.code.toUpperCase()));result.count=result.visits.length;result.missing=expected.filter(p=>!codes.has(p.code.toUpperCase()));
- if(completed){result.date=completed;result.status='ok'}else result.status=now<=w.end?'pending':result.count?'incomplete':'missed';
+ if(completed){result.date=completed;result.status='ok'}else result.status=(s.endExclusive?now<w.end:now<=w.end)?'pending':result.count?'incomplete':'missed';
  return result;
 }
 const getWindow=(date,s)=>{
@@ -121,7 +122,7 @@ function renderCalendar(){const [y,m]=filterDate.split('-').map(Number),first=ne
 function renderPeople(){const list=current('employees');const rows=list.map(e=>`<tr><td class="value-strong">${safe(e.name)}</td><td>${e.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-person" data-id="${e.id}">Editar</button> <button class="btn small" data-action="toggle-person" data-id="${e.id}">${e.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');return `<div class="panel-head"><h2>Conserjes</h2><button class="btn primary" data-action="add-person">+ Agregar conserje</button><span class="muted">${list.filter(x=>x.active).length} activos</span></div>${panelTable(['Nombre completo','Estado','Acciones'],rows)}`}
 function renderSettings(){if(typeof configurationCanWrite!=='function'||!configurationCanWrite())return typeof renderConfigurationGate==='function'?renderConfigurationGate():header('Configuración','Cargando acceso protegido…');let inner='';
  if(tab==='rondas'){
- const rows=current('schedules').map(s=>`<tr><td>${safe(dayTitle[s.type])}</td><td>${safe(s.turn)}</td><td>${safe(s.start)}–${safe(s.end)} ${s.offset?'(+1 día)':''}</td><td>${safe(s.type==='meters'?meterResponsible(s):employee(s.employeeId)?.name||'Por asignar')}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button> <button class="btn small danger" data-action="delete-round" data-id="${s.id}">Eliminar</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Horarios de rondas</h2><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div>${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
+ const rows=current('schedules').map(s=>`<tr><td>${safe(dayTitle[s.type])}</td><td>${safe(s.turn)}</td><td>${s.type==='meters'?'08:00–15:00'+(s.employeeId2?' / 15:00–22:00':''):safe(s.start)+'–'+safe(s.end)+(s.offset?' (+1 día)':'')}</td><td>${safe(s.type==='meters'?meterResponsible(s):employee(s.employeeId)?.name||'Por asignar')}</td><td>${s.required.filter(pid=>point(pid)?.active).length}</td><td>${s.active?'Activa':'Archivada'}</td><td><button class="btn small" data-action="edit-round" data-id="${s.id}">Editar</button> <button class="btn small" data-action="toggle-round" data-id="${s.id}">${s.active?'Desactivar':'Activar'}</button> <button class="btn small danger" data-action="delete-round" data-id="${s.id}">Eliminar</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Horarios de rondas</h2><button class="btn primary" data-action="add-round">+ Nueva ronda</button></div>${panelTable(['Día','Turno','Ventana horaria','Responsable','Puntos obligatorios','Estado','Acciones'],rows)}`;
  }else if(tab==='puntos'){
  const rows=current('points').map(p=>`<tr><td class="value-strong">${safe(p.name)}</td><td><code>${safe(p.code||'Pendiente')}</code></td><td>${p.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-point" data-id="${p.id}">Editar</button> <button class="btn small" data-action="toggle-point" data-id="${p.id}">${p.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');inner=`<div class="panel-head"><h2>Etiquetas RFID</h2><button class="btn primary" data-action="add-point">+ Nuevo punto</button></div><p class="subhead">Asocia cada código RFID con el lugar físico. Nunca reutilices un código para dos puntos activos.</p>${panelTable(['Punto de control','Código RFID','Estado','Acciones'],rows)}`;
  }else if(tab==='conserjes'){inner=renderPeople();
@@ -197,31 +198,25 @@ function addEditRound(sid){
  {name:'start',label:'Hora de inicio',type:'time',value:s?.start||'10:00',required:true},
  {name:'end',label:'Hora de término',type:'time',value:s?.end||'11:00',required:true},
  {name:'offset',label:'Día de ejecución',type:'select',value:String(s?.offset??0),options:[['0','El mismo día'],['1','Día siguiente']]},
- {name:'employeeId',label:'Conserje responsable / Mañana',type:'select',value:s?.employeeId||'',options:people},
- {name:'meterStart',label:'Mañana: desde',type:'time',value:s?.meterTimed?s.start:'00:00',required:true},
- {name:'meterEnd',label:'Mañana: hasta',type:'time',value:s?.meterTimed?s.end:'11:59',required:true},
- {name:'employeeId2',label:'Conserje de tarde (opcional)',type:'select',value:s?.employeeId2||'',options:[['','Sin segunda asignación'],...people.slice(1)]},
- {name:'start2',label:'Tarde: desde',type:'time',value:s?.start2||'12:00',required:true},
- {name:'end2',label:'Tarde: hasta',type:'time',value:s?.end2||'23:59',required:true}];
+ {name:'employeeId',label:'Conserje responsable / Mañana (08:00–15:00)',type:'select',value:s?.employeeId||'',options:people},
+ {name:'employeeId2',label:'Conserje de tarde (15:00–22:00, opcional)',type:'select',value:s?.employeeId2||'',options:[['','Sin segunda asignación'],...people.slice(1)]}];
  const dlg=document.getElementById('modal');
  modal(s?'Editar ronda':'Agregar ronda',fields,s?'Guardar':'Crear',v=>{
   const monthly=v.type==='meters',required=[...dlg.querySelectorAll('[name="required"]:checked')].map(x=>x.value);
   if(!required.length){toast('Elige al menos un punto obligatorio');return false}
-  const val={type:v.type,turn:monthly?'Lectura de Medidores':v.turn.trim(),start:monthly?v.meterStart:v.start,end:monthly?v.meterEnd:v.end,offset:monthly?0:Number(v.offset),employeeId:v.employeeId,employeeId2:monthly?v.employeeId2:'',meterTimed:monthly,start2:monthly?v.start2:'',end2:monthly?v.end2:'',required};
+  const val={type:v.type,turn:monthly?'Lectura de Medidores':v.turn.trim(),start:monthly?'08:00':v.start,end:monthly?'15:00':v.end,offset:monthly?0:Number(v.offset),employeeId:v.employeeId,employeeId2:monthly?v.employeeId2:'',meterTimed:monthly,start2:monthly?'15:00':'',end2:monthly?'22:00':'',required};
   if(!val.turn||!val.start||!val.end){toast('Completa los campos de la ronda');return false}
   if(monthly){
-   if(val.start>val.end){toast('El horario de mañana debe comenzar antes de terminar');return false}
    if(val.employeeId2&&(!val.employeeId||val.employeeId===val.employeeId2)){toast('Selecciona dos conserjes distintos');return false}
-   if(val.employeeId2&&(!val.start2||!val.end2||val.start2>val.end2||val.end>=val.start2)){toast('Los horarios de mañana y tarde deben estar ordenados y no superponerse');return false}
   }
   if(s)Object.assign(s,val);else state.schedules.push({id:id(),buildingId:state.activeId,active:true,...val});toast('Ronda guardada');
  });
  const node=document.getElementById('modal-content');
  node.querySelector('.forms').insertAdjacentHTML('beforeend',`<div class="form-field full"><span>Puntos obligatorios para esta ronda</span><div class="grid" style="gap:6px;grid-template-columns:1fr 1fr;max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">${pts.map(p=>`<label class="required-point"><input type="checkbox" name="required" value="${p.id}" ${(s?s.required.includes(p.id):true)?'checked':''}><span>${safe(p.name)}</span></label>`).join('')}</div></div>`);
- const typeInput=node.querySelector('[name="type"]'),meterHint=document.createElement('p');meterHint.className='readme';meterHint.textContent='Cada conserje debe completar todos los puntos una vez en los últimos 4 días del mes, dentro de su propio horario. Mañana y tarde se evalúan por separado. Ajusta los horarios para que coincidan con los turnos reales.';node.prepend(meterHint);
- const update=()=>{const monthly=typeInput.value==='meters',second=!!node.querySelector('[name="employeeId2"]').value;meterHint.hidden=!monthly;
-  for(const name of ['turn','start','end','offset','meterStart','meterEnd','employeeId2','start2','end2']){
-   const input=node.querySelector('[name="'+name+'"]'),show=['turn','start','end','offset'].includes(name)?!monthly:monthly&&(!['start2','end2'].includes(name)||second);
+ const typeInput=node.querySelector('[name="type"]'),meterHint=document.createElement('p');meterHint.className='readme';meterHint.textContent='Cada conserje debe completar todos los puntos una vez en los últimos 4 días del mes, dentro de su propio horario. Mañana y tarde se evalúan por separado. Horarios fijos: mañana de 08:00 a 15:00; tarde de 15:00 a 22:00. Una marca exactamente a las 15:00 pertenece a la tarde.';node.prepend(meterHint);
+ const update=()=>{const monthly=typeInput.value==='meters';meterHint.hidden=!monthly;
+  for(const name of ['turn','start','end','offset','employeeId2']){
+   const input=node.querySelector('[name="'+name+'"]'),show=['turn','start','end','offset'].includes(name)?!monthly:monthly;
    input.closest('.form-field').style.display=show?'':'none';input.disabled=!show;
   }
  };
