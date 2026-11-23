@@ -6,7 +6,7 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 function setup(month,now,logs=[],required=['p']){
  const schedule={id:'monthly',type:'meters',required,active:true,start:'10:00',end:'11:00',offset:1};
- const c=vm.createContext({Date,Set,month,now,logs,schedule,
+ const c=vm.createContext({Date,Set,addDays:(date,n)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)},month,now,logs,schedule,
  pad:n=>String(n).padStart(2,'0'),toDate:s=>new Date(s+'T12:00:00'),dtISO:()=>c.now,
  point:id=>id==='p'?{id,active:true,code:'A1'}:id==='q'?{id,active:true,code:'B2'}:null,
  current:()=>logs,activeSchedules:()=>[schedule]});

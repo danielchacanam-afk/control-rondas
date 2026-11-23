@@ -3,7 +3,7 @@ const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 function setup(logs=[]){
  const schedule={id:'m',buildingId:'building',type:'meters',rotationShift:'meters',employeeId:'jorge',employeeId2:'sandra',required:['p'],active:true};
  const state={buildings:[{id:'building',weeklyRotation:{from:'2026-11-23',morningEmployeeId:'sandra',afternoonEmployeeId:'jorge',workDays:[1,2,3,4,5,6]}}]};
- const c=vm.createContext({Date,Set,state,logs,schedule,now:'2026-12-01T00:00:00',month:'2026-11',pad:n=>String(n).padStart(2,'0'),toDate:d=>new Date(d+'T12:00:00'),point:()=>({active:true,code:'A1'}),dtISO:()=>c.now,current:()=>logs,activeSchedules:()=>[schedule]});
+ const c=vm.createContext({Date,Set,addDays:(date,n)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)},state,logs,schedule,now:'2026-12-01T00:00:00',month:'2026-11',pad:n=>String(n).padStart(2,'0'),toDate:d=>new Date(d+'T12:00:00'),point:()=>({active:true,code:'A1'}),dtISO:()=>c.now,current:()=>logs,activeSchedules:()=>[schedule]});
  vm.runInContext(source.slice(source.indexOf('const dayType='),source.indexOf('const schedLabel=')),c);return {c,run:s=>vm.runInContext(s,c)};
 }
 test('el 23 Sandra pasa a mañana, el 30 Jorge, y se alternan lunes sin reiniciar al cambiar de mes o año',()=>{

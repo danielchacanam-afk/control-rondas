@@ -23,3 +23,5 @@ tbody tr.round-row:hover{background-color:var(--round-color)}
 .calendar-round{padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;line-height:1.4}.calendar-responsible{font-weight:650;overflow-wrap:anywhere}.calendar-round small{display:block;color:var(--muted)}.calendar-round .chip{white-space:normal;margin:2px 0}@media(max-width:760px){.calendar-round{font-size:10px}.calendar-responsible{display:block}}
 
 .calendar-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.calendar-filters .form-field{gap:6px;min-width:0}.calendar-filters select,.calendar-filters input,.calendar-filters .btn{height:42px;margin:0}.calendar-filters input[type="month"]{padding:9px 10px}
+
+.round-progress{display:inline-block;font-size:10px;font-weight:700;color:var(--muted);margin-left:4px}.calendar-round .chip{margin-right:3px}
