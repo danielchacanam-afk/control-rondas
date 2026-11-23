@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="styles.css?v=20261123-calendar-stack-1">
   <script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script defer src="jwm-serial.js?v=1"></script>
-  <script defer src="app.js?v=20261123-detail-format-1"></script>
+  <script defer src="app.js?v=20261123-detail-close-1"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js"></script>
   <script defer src="config-access.js?v=20261120-1"></script>
   <script defer src="config-cloud.js?v=20261120-access-1"></script>
@@ -39,7 +39,7 @@
       <main id="app" tabindex="-1"></main>
     </div>
   </div>
-  <dialog id="modal"><form method="dialog"><button value="cancel" class="close-modal" aria-label="Cerrar">×</button><div id="modal-content"></div></form></dialog>
+  <dialog id="modal"><form method="dialog"><button type="button" id="modal-close" class="close-modal" aria-label="Cerrar">×</button><div id="modal-content"></div></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
