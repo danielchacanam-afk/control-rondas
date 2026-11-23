@@ -48,8 +48,14 @@ const belongs=(r)=>r.buildingId===state.activeId;
 function toast(message){const t=document.getElementById('toast');t.textContent=message;t.className='show';clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.className='',4200)}
 function badge(st){return `<span class="chip ${statusCSS[st]||'pending'}">${safe(statusLabels[st]||st)}</span>`}
 const dayType=(date)=>{const d=toDate(date).getDay();return d===0?'sunday':d===6?'saturday':'weekday'};
-const dayTitle={weekday:'Lunes a viernes',mondaySaturday:'Lunes a sábado',saturday:'Sábado',sunday:'Domingo',meters:'Lectura de Medidores'};
-const scheduleApplies=(type,date)=>type==='mondaySaturday'?toDate(date).getDay()!==0:type===dayType(date);
+const dayTitle={weekday:'Lunes a viernes',mondaySaturday:'Lunes a sábado',mondayThursday:'Lunes a jueves',fridaySunday:'Viernes a domingo',saturday:'Sábado',sunday:'Domingo',meters:'Lectura de Medidores'};
+const scheduleApplies=(type,date)=>{
+ const day=toDate(date).getDay();
+ if(type==='mondaySaturday')return day>=1&&day<=6;
+ if(type==='mondayThursday')return day>=1&&day<=4;
+ if(type==='fridaySunday')return day===0||day>=5;
+ return type===dayType(date);
+};
 function meterWindow(month){
  const [year,monthNumber]=month.split('-').map(Number),last=new Date(year,monthNumber,0).getDate();
  return {start:month+'-'+pad(last-3)+'T00:00:00',end:month+'-'+pad(last)+'T23:59:59'};
