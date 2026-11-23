@@ -122,7 +122,9 @@ function shiftKey(timestamp){
 }
 function dailyOccurrence(date,s){
  s=resolveSchedule(s,addDays(date,s.offset||0));const window=getWindow(date,s),expected=s.required.map(point);
- return {date,s,window,expected,valid:expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!==''),logs:[]};
+ const shiftWindow=s.shiftStart&&s.shiftEnd?{start:date+'T'+s.shiftStart+':00',end:addDays(date,s.shiftEndOffset||0)+'T'+s.shiftEnd+':00'}:null;
+ if(shiftWindow&&shiftWindow.end<shiftWindow.start)shiftWindow.end=addDays(date,(s.shiftEndOffset||0)+1)+'T'+s.shiftEnd+':00';
+ return {date,s,window,shiftWindow,expected,valid:expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!==''),logs:[]};
 }
 function dailyOccurrences(from,to){
  const occurrences=[];
@@ -138,7 +140,8 @@ function assignDailyReadings(occurrences,readings,now){
    if(!o.valid||!o.expected.some(p=>p.code.toUpperCase()===code))continue;
    const inside=r.timestamp>=o.window.start&&r.timestamp<=o.window.end;
    const distance=inside?0:Math.min(Math.abs(time-Date.parse(o.window.start+'Z')),Math.abs(time-Date.parse(o.window.end+'Z')));
-   if(!inside&&(shiftKey(r.timestamp)!==shiftKey(o.window.start)||distance>OUTSIDE_ROUND_MINUTES*60000))continue;
+   const sameShift=o.shiftWindow?r.timestamp>=o.shiftWindow.start&&r.timestamp<=o.shiftWindow.end:shiftKey(r.timestamp)===shiftKey(o.window.start);
+   if(!inside&&(!sameShift||distance>OUTSIDE_ROUND_MINUTES*60000))continue;
    const score=[distance,Math.abs(time-(Date.parse(o.window.start+'Z')+Date.parse(o.window.end+'Z'))/2),o.window.start+'|'+o.s.id];
    if(!bestScore||score[0]<bestScore[0]||(score[0]===bestScore[0]&&(score[1]<bestScore[1]||(score[1]===bestScore[1]&&score[2]<bestScore[2])))){best=o;bestScore=score}
   }
@@ -193,7 +196,7 @@ function renderHome(){const ev=getEvaluations(filterDate),c=countRows(ev),evalua
 }
 function nameByCode(code){const p=current('points').find(p=>p.code&&p.code.toUpperCase()===String(code).toUpperCase());return p?p.name:`Sin asignar (${code})`}
 function readingsFiltered(){return current('readings').filter(r=>r.timestamp.startsWith(filterDate)&&(!readFilter||[r.code,r.device,nameByCode(r.code)].some(v=>String(v).toLowerCase().includes(readFilter.toLowerCase())))).sort((a,b)=>b.timestamp.localeCompare(a.timestamp))}
-function renderReadings(){const r=readingsFiltered();const rows=r.slice(0,400).map(x=>`<tr><td>${fmtDT(x.timestamp)}</td><td><code>${safe(x.code)}</code></td><td>${safe(nameByCode(x.code))}</td><td>${safe(x.device)}</td><td>${x.demo?'<span class="chip demo">DEMO</span>':'<span class="chip pending">'+(x.source==='jwm'?'JWM · Nube':'CSV')+'</span>'}</td></tr>`).join('');return header('Lecturas del dispositivo','Registros sin modificar, identificados por el código RFID y el número de lector.',`<button class="btn primary" data-action="import">Importar CSV</button><button class="btn" data-action="csv-lecturas">Exportar CSV</button>`)+banner()+`<section class="panel"><div class="panel-head"><h2>Historial de marcaciones <span class="badge-n">(${r.length})</span></h2><div class="filters"><input type="month" id="month-filter" value="${filterDate}" aria-label="Filtrar por mes"><input type="search" id="read-search" value="${safe(readFilter)}" placeholder="Buscar código, punto o equipo"></div></div>${panelTable(['Fecha y hora','Código RFID','Punto de control','Equipo','Origen'],rows)}${r.length>400?'<p class="muted">Mostrando solo las primeras 400 filas. La exportación incluye todas.</p>':''}</section><input id="file-import" class="sr-only" type="file" accept=".csv,text/csv">`}
+function renderReadings(){const r=readingsFiltered();const rows=r.slice(0,400).map(x=>`<tr><td>${fmtDT(x.timestamp)}</td><td><code>${safe(x.code)}</code></td><td>${safe(nameByCode(x.code))}</td><td>${safe(x.device)}</td><td>${x.demo?'<span class="chip demo">DEMO</span>':'<span class="chip pending">'+(x.source==='jwm'?'JWM · Nube':x.source==='google-sheets'?'Google Sheets':'CSV')+'</span>'}</td></tr>`).join('');return header('Lecturas del dispositivo','Registros sin modificar, identificados por el código RFID y el número de lector.',`<button class="btn primary" data-action="import">Importar CSV</button><button class="btn" data-action="csv-lecturas">Exportar CSV</button>`)+banner()+`<section class="panel"><div class="panel-head"><h2>Historial de marcaciones <span class="badge-n">(${r.length})</span></h2><div class="filters"><input type="month" id="month-filter" value="${filterDate}" aria-label="Filtrar por mes"><input type="search" id="read-search" value="${safe(readFilter)}" placeholder="Buscar código, punto o equipo"></div></div>${panelTable(['Fecha y hora','Código RFID','Punto de control','Equipo','Origen'],rows)}${r.length>400?'<p class="muted">Mostrando solo las primeras 400 filas. La exportación incluye todas.</p>':''}</section><input id="file-import" class="sr-only" type="file" accept=".csv,text/csv">`}
 function calendarName(employeeId){const name=employee(employeeId)?.name;if(!name)return 'Por asignar';const parts=name.trim().split(/\s+/);return parts.length>1?Array.from(parts[0])[0]+'. '+parts.slice(1).join(' '):name}
 function filterCalendarEvaluations(evaluations){return !calendarEmployee?evaluations:evaluations.filter(e=>calendarEmployee==='__unassigned'?!e.s.employeeId:e.s.employeeId===calendarEmployee)}
 function renderCalendar(){const [y,m]=filterDate.split('-').map(Number),first=new Date(y,m-1,1),offset=(first.getDay()+6)%7,days=new Date(y,m,0).getDate(),evaluations=filterCalendarEvaluations(getEvaluations(filterDate));

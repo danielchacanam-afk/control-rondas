@@ -8,6 +8,12 @@ function setup(readings=[],schedules){
  return {c,run:s=>vm.runInContext(s,c),result:(date,id)=>vm.runInContext(`getEvaluations(month).find(e=>e.date==='${date}'&&e.s.id==='${id}')`,c)};
 }
 const log=(timestamp,code='P0')=>({timestamp,code,device:'reader'});
+test('las jornadas importadas delimitan las marcas fuera de horario sin alterar la ventana explícita',()=>{
+ const base={id:'custom',type:'weekday',offset:0,required:['P0'],employeeId:'person',active:true,start:'09:00',end:'09:30',shiftStart:'07:00',shiftEnd:'15:00',shiftEndOffset:0};
+ const t=setup([log('2026-11-19T07:15:00')],[base]);assert.equal(t.result('2026-11-19','custom').count,1);
+ t.c.schedules=[{...base,start:'04:45',end:'05:45',offset:1,shiftStart:'21:00',shiftEnd:'06:00',shiftEndOffset:1}];t.c.readings=[log('2026-11-20T06:30:00')];assert.equal(t.result('2026-11-19','custom').count,0);
+ t.c.schedules=[{...base,start:'20:15',end:'21:15',shiftStart:'15:00',shiftEnd:'21:00'}];t.c.readings=[log('2026-11-19T21:10:00')];assert.equal(t.result('2026-11-19','custom').count,1);
+});
 test('un punto tardío produce incompleta fuera de horario y no afecta días vecinos ni tarde',()=>{
  const t=setup([log('2026-11-19T11:40:00')]);const e=t.result('2026-11-19','am');assert.equal(e.status,'incomplete');assert.equal(e.count,1);assert.equal(e.timing,'outside');assert.equal(e.missing.length,6);
  for(const [d,id]of [['2026-11-18','am'],['2026-11-20','am'],['2026-11-19','pm'],['2026-11-17','n1']])assert.equal(t.result(d,id).status,'missed');
