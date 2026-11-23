@@ -18,6 +18,12 @@ try {
     & sc.exe delete ControlRondasJWM | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo quitar el servicio' }
   }
+  $indicator=Join-Path $root 'ControlRondasIndicador.exe'
+  Get-ScheduledTask -TaskName 'ControlRondasIndicador-*' -ErrorAction SilentlyContinue | Where-Object { @($_.Actions | Where-Object { $_.Execute -eq $indicator }).Count -gt 0 } | ForEach-Object {
+    Stop-ScheduledTask -TaskName $_.TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false
+  }
+  Get-CimInstance Win32_Process -Filter "name='ControlRondasIndicador.exe'" | Where-Object { $_.ExecutablePath -eq $indicator } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
   $resolved=[IO.Path]::GetFullPath($root).TrimEnd('\')
   $expected=[IO.Path]::GetFullPath((Join-Path $env:ProgramFiles 'Control de Rondas')).TrimEnd('\')
   if ($resolved -ne $expected) { throw 'Carpeta inesperada; se conservaron los archivos' }

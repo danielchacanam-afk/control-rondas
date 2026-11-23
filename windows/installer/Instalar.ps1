@@ -15,6 +15,10 @@ if ($PrepareOnly) {
 }
 $package=Join-Path $StageRoot 'programa'
 $exe=Join-Path $installRoot 'ControlRondas.exe'
+$indicator=Join-Path $installRoot 'ControlRondasIndicador.exe'
+$indicatorTask='ControlRondasIndicador-'+$UserSid
+$oldIndicatorXml=$null
+$indicatorRegistered=$false
 $backup=$null
 $created=$false
 $oldService=$null
@@ -42,6 +46,7 @@ try {
   }
   & (Join-Path $package 'ControlRondas.exe') --check-tls | Out-Null
   NativeCheck 'Comprobación TLS'
+  if (-not (Test-Path -LiteralPath (Join-Path $package 'ControlRondasIndicador.exe'))) { throw 'Falta el indicador de conexión en el paquete' }
   $incoming=Get-Content -LiteralPath (Join-Path $StageRoot 'conexion.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($incoming.url -ne 'https://mqzhxhvtfszjypwumizl.supabase.co' -or $incoming.device_token -notmatch '^[a-f0-9]{64}$') { throw 'La conexión incluida no es válida' }
   Add-Type -AssemblyName System.Security
@@ -67,6 +72,13 @@ try {
     $driverProcess=Start-Process -FilePath (Join-Path $env:WINDIR 'System32\pnputil.exe') -ArgumentList ('/add-driver "'+$driver+'" /install') -NoNewWindow -Wait -PassThru
     if ($driverProcess.ExitCode -notin @(0,3010,1641)) { throw "Windows no pudo instalar el controlador USB ($($driverProcess.ExitCode))" }
     $rebootRequired=$driverProcess.ExitCode -in @(3010,1641)
+    $existingTask=Get-ScheduledTask -TaskName $indicatorTask -ErrorAction SilentlyContinue
+    if ($existingTask) {
+      if (@($existingTask.Actions | Where-Object { $_.Execute -ne $indicator }).Count) { throw 'La tarea del indicador pertenece a otro programa' }
+      $oldIndicatorXml=Export-ScheduledTask -TaskName $indicatorTask
+      Stop-ScheduledTask -TaskName $indicatorTask -ErrorAction SilentlyContinue
+    }
+    Get-CimInstance Win32_Process -Filter "name='ControlRondasIndicador.exe'" | Where-Object { $_.ExecutablePath -eq $indicator } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction Stop }
     if ($oldService) {
       Progress 30 'Respaldando la instalación existente'
       Stop-Service -Name $serviceName
@@ -124,16 +136,31 @@ try {
       }
     } while ((Get-Date) -lt $deadline)
     if (-not $health -or [DateTimeOffset]::Parse($health.checked_at) -le $started) { throw 'El servicio no confirmó un ciclo de funcionamiento' }
+    Progress 92 'Activando el indicador junto al reloj'
+    $action=New-ScheduledTaskAction -Execute $indicator -Argument ('--data-dir "'+$dataRoot+'"') -WorkingDirectory $installRoot
+    $trigger=New-ScheduledTaskTrigger -AtLogOn -User $UserSid
+    $taskPrincipal=New-ScheduledTaskPrincipal -UserId $UserSid -LogonType Interactive -RunLevel Limited
+    $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    Register-ScheduledTask -TaskName $indicatorTask -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $settings -Description 'Indicador de conexión verificada del lector. No abre el USB ni necesita la web.' -Force | Out-Null
+    $indicatorRegistered=$true
+    Start-ScheduledTask -TaskName $indicatorTask
     Progress 95 'Creando accesos y opciones de mantenimiento'
     Copy-Item -LiteralPath (Join-Path $StageRoot 'Desinstalar.ps1') -Destination $installRoot -Force
     $menu=Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Control de Rondas'
     New-Item -ItemType Directory -Path $menu -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $menu 'Abrir Control de Rondas.url') -Value "[InternetShortcut]`r`nURL=https://danielchacanam-afk.github.io/control-rondas/" -Encoding ASCII
     Set-Content -LiteralPath (Join-Path $menu 'Ver sincronización.url') -Value "[InternetShortcut]`r`nURL=https://danielchacanam-afk.github.io/control-rondas/#sincronizacion" -Encoding ASCII
+    $shortcutShell=New-Object -ComObject WScript.Shell
+    $shortcut=$shortcutShell.CreateShortcut((Join-Path $menu 'Estado del lector.lnk'))
+    $shortcut.TargetPath=$indicator
+    $shortcut.Arguments='--show --data-dir "'+$dataRoot+'"'
+    $shortcut.WorkingDirectory=$installRoot
+    $shortcut.Description='Ver conexión USB y última descarga del lector'
+    $shortcut.Save()
     $key='HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ControlRondasJWM'
     New-Item -Path $key -Force | Out-Null
     $uninstall='powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+(Join-Path $installRoot 'Desinstalar.ps1')+'"'
-    @{DisplayName='Control de Rondas - Lector JWM';DisplayVersion='2.1';Publisher='Control de Rondas';InstallLocation=$installRoot;UninstallString=$uninstall;DisplayIcon=$exe} | ForEach-Object { foreach ($name in $_.Keys) { New-ItemProperty -Path $key -Name $name -Value $_[$name] -PropertyType String -Force | Out-Null } }
+    @{DisplayName='Control de Rondas - Lector JWM';DisplayVersion='2.2';Publisher='Control de Rondas';InstallLocation=$installRoot;UninstallString=$uninstall;DisplayIcon=$exe} | ForEach-Object { foreach ($name in $_.Keys) { New-ItemProperty -Path $key -Name $name -Value $_[$name] -PropertyType String -Force | Out-Null } }
     New-ItemProperty -Path $key -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
     New-ItemProperty -Path $key -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
   }
@@ -142,6 +169,8 @@ try {
 } catch {
   $reason=$_.Exception.Message
   if (-not $PrepareOnly) {
+    if ($indicatorRegistered) { Stop-ScheduledTask -TaskName $indicatorTask -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName $indicatorTask -Confirm:$false -ErrorAction SilentlyContinue }
+    Get-CimInstance Win32_Process -Filter "name='ControlRondasIndicador.exe'" | Where-Object { $_.ExecutablePath -eq $indicator } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
     if ($created) { Stop-Service -Name $serviceName -ErrorAction SilentlyContinue; & sc.exe delete $serviceName | Out-Null }
     elseif ($oldService) {
       Stop-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -153,6 +182,7 @@ try {
       Set-Service -Name $serviceName -StartupType $previousStart -ErrorAction SilentlyContinue
       if ($oldService.State -eq 'Running') { Start-Service -Name $serviceName -ErrorAction SilentlyContinue }
     }
+    if ($oldIndicatorXml) { Register-ScheduledTask -TaskName $indicatorTask -Xml $oldIndicatorXml -Force -ErrorAction SilentlyContinue | Out-Null; Start-ScheduledTask -TaskName $indicatorTask -ErrorAction SilentlyContinue }
   }
   @{state='error';message=$reason} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StageRoot 'resultado.json') -Encoding UTF8
   Write-Output ('ERROR|'+$reason)

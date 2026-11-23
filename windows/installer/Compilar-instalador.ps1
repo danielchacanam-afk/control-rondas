@@ -6,7 +6,7 @@ $hash=(Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInv
 New-Item -ItemType Directory -Path $BuildDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path (Split-Path $OutputFile) -Force | Out-Null
 $metadata=Join-Path (Resolve-Path -LiteralPath $BuildDirectory).Path 'PackageInfo.cs'
-$text='using System.Reflection; [assembly: AssemblyTitle("Instalador de Control de Rondas")] [assembly: AssemblyProduct("Control de Rondas")] [assembly: AssemblyCompany("Control de Rondas")] [assembly: AssemblyVersion("2.1.0.0")] [assembly: AssemblyFileVersion("2.1.0.0")] internal static class PackageInfo { internal const string Sha256 = "'+$hash+'"; }'
+$text='using System.Reflection; [assembly: AssemblyTitle("Instalador de Control de Rondas")] [assembly: AssemblyProduct("Control de Rondas")] [assembly: AssemblyCompany("Control de Rondas")] [assembly: AssemblyVersion("2.2.0.0")] [assembly: AssemblyFileVersion("2.2.0.0")] internal static class PackageInfo { internal const string Sha256 = "'+$hash+'"; }'
 Set-Content -LiteralPath $metadata -Value $text -Encoding UTF8
 $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source=Join-Path $PSScriptRoot 'Setup.cs'

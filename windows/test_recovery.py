@@ -27,7 +27,7 @@ class Recovery(unittest.TestCase):
         patch.stopall()
         self.temp.cleanup()
 
-    def download(self):
+    def download(self, on_verified=None):
         agent.save([self.record])
         return [self.record]
 
@@ -87,6 +87,45 @@ class Recovery(unittest.TestCase):
         for opcode in set(range(256)) - {0, 2, 3, 10}:
             with self.assertRaises(ValueError):
                 agent.frame(opcode)
+
+    def test_verified_usb_is_published_before_waiting_for_internet(self):
+        def connected(on_verified=None):
+            on_verified()
+            first = json.loads((self.root / 'estado.json').read_text())
+            self.assertEqual(first['usb'], 'connected')
+            self.assertEqual(first['download_state'], 'downloading')
+            self.assertTrue(first['verified_at'])
+            return self.download()
+
+        def uploading(*args, **kwargs):
+            snapshot = json.loads((self.root / 'estado.json').read_text())
+            self.assertEqual(snapshot['usb'], 'connected')
+            self.assertEqual(snapshot['download_state'], 'idle')
+            self.assertTrue(snapshot['last_download'])
+            return self.reply()
+
+        with patch.object(agent, 'sync_once', side_effect=connected), patch.object(sync_cloud.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = uploading
+            agent.run_cycle(agent.read_status(self.root))
+
+    def test_usb_error_is_published_before_a_cloud_upload(self):
+        agent.save([self.record])
+        def uploading(*args, **kwargs):
+            snapshot = json.loads((self.root / 'estado.json').read_text())
+            self.assertEqual(snapshot['usb'], 'error')
+            self.assertEqual(snapshot['download_state'], 'error')
+            return self.reply()
+        with patch.object(agent, 'sync_once', side_effect=agent.ProtocolError('Puerto sin respuesta')), patch.object(sync_cloud.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = uploading
+            agent.run_cycle(agent.read_status(self.root))
+
+    def test_wrong_device_never_publishes_a_successful_verification(self):
+        callback = unittest.mock.Mock()
+        with patch.object(agent.serial, 'Serial'), patch.object(agent, 'Reader') as reader:
+            reader.return_value.exchange.side_effect = [b'\x8a', b'\x82\x01\x00']
+            with self.assertRaises(agent.ProtocolError):
+                agent.download('COM99', on_verified=callback)
+        callback.assert_not_called()
 
 
 if __name__ == '__main__':

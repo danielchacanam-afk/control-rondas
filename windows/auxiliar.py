@@ -103,7 +103,7 @@ def decode_page(payload, expected_page, now):
         yield DEVICE, raw[:2].hex().upper(), stamp.strftime("%Y-%m-%d %H:%M:%S"), raw
 
 
-def download(port_name):
+def download(port_name, on_verified=None):
     now = datetime.now(TZ)
     with serial.Serial(port_name, 57600, timeout=0.12, write_timeout=1.5) as port:
         reader = Reader(port)
@@ -117,6 +117,9 @@ def download(port_name):
         identity = reader.exchange(0x02, 0x82)
         if len(identity) != 3 or int.from_bytes(identity[1:], "little") != DEVICE:
             raise ProtocolError("El puerto no corresponde al lector JWM 5561")
+        if on_verified:
+            on_verified()
+        last_progress = time.monotonic()
         start = reader.exchange(0x03, 0x83)
         if len(start) != 3:
             raise ProtocolError("Cabecera de descarga inesperada")
@@ -126,6 +129,9 @@ def download(port_name):
         records = []
         for index in range(pages):
             records.extend(decode_page(reader.exchange(0x00, 0x93), index, now))
+            if on_verified and time.monotonic() - last_progress >= 5:
+                on_verified()
+                last_progress = time.monotonic()
         return records
 
 
@@ -154,13 +160,13 @@ def save(records):
     return added
 
 
-def sync_once():
+def sync_once(on_verified=None):
     ports = [port.device for port in list_ports.comports() if (port.vid, port.pid) == USB_ID]
     if not ports:
         return None
     if len(ports) != 1:
         raise ProtocolError("Hay más de un CP210x conectado. Conecta solo el lector de rondas.")
-    records = download(ports[0])
+    records = download(ports[0], on_verified=on_verified)
     added = save(records)
     logging.info("%s, lector %s: %s descargadas, %s nuevas, %s duplicadas.",
                  ports[0], DEVICE, len(records), added, len(records) - added)
@@ -168,18 +174,32 @@ def sync_once():
 
 
 def run_cycle(status):
+    def confirmed():
+        status.update(usb='connected', verified_at=now(), checked_at=now(), download_state='downloading', usb_error=None)
+        store_status(ROOT, status)
+
     try:
         ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == USB_ID]
-        status['port'] = ports[0] if len(ports) == 1 else None
-        records = sync_once()
+        detected = ports[0] if len(ports) == 1 else None
+        if status.get('usb') != 'connected' or status.get('port') != detected:
+            status['usb'] = 'checking' if ports else 'disconnected'
+        status['port'] = detected
+        status['checked_at'] = now()
+        store_status(ROOT, status)
+        records = sync_once(on_verified=confirmed)
         status['usb'] = 'connected' if records is not None else 'disconnected'
         status['usb_error'] = None
         if records is not None:
             status['last_download'] = now()
+            status['verified_at'] = status['last_download']
+        status['download_state'] = 'idle' if records is not None else 'waiting'
     except (OSError, TimeoutError, ProtocolError, sqlite3.Error) as error:
         status['usb'] = 'error'
         status['usb_error'] = str(error)[:500]
         logging.warning('USB: %s', error)
+        status['download_state'] = 'error'
+    status['checked_at'] = now()
+    store_status(ROOT, status)  # Publicar el resultado USB antes de cualquier espera de red.
     config = ROOT / 'supabase.json'
     try:
         with closing(database()) as conn:
@@ -234,12 +254,23 @@ def run(stop):
         except OSError:
             logging.error('Ya hay un auxiliar de rondas activo.')
             return 1
-        logging.info('Auxiliar 2.0 iniciado (%s).', 'servicio' if '--service' in sys.argv else 'sesión')
+        logging.info('Auxiliar 2.2 iniciado (%s).', 'servicio' if '--service' in sys.argv else 'sesión')
         status = read_status(ROOT)
-        status.update(mode='service' if '--service' in sys.argv else 'session', version='2.0')
+        status.update(mode='service' if '--service' in sys.argv else 'session', version='2.2')
+        known_ports = None
+        next_cycle = 0
         while not stop.is_set():
-            run_cycle(status)
-            stop.wait(30)
+            try:
+                ports = tuple(sorted(p.device for p in list_ports.comports() if (p.vid, p.pid) == USB_ID))
+            except OSError:
+                ports = ('enumeration-error',)
+            if ports != known_ports or time.monotonic() >= next_cycle:
+                known_ports = ports
+                run_cycle(status)
+                next_cycle = time.monotonic() + 30
+            stop.wait(1)
+        status.update(usb='disconnected', download_state='stopped', checked_at=now())
+        store_status(ROOT, status)
         logging.info('Auxiliar detenido de forma controlada.')
     return 0
 

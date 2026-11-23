@@ -28,3 +28,11 @@ Se probaron preparación inicial, reinstalación conservando nuevas lecturas, in
 En el PC anterior, abrir el EXE y pulsar **Desactivar este PC**. Se detiene el servicio y se deshabilita su inicio, conservando los datos. Copiar el mismo EXE al nuevo computador, aceptar la licencia del controlador y pulsar **Instalar**. Windows solicitará elevación. Conectar el lector después y comprobar una marcación en la web.
 
 La reinstalación conserva la base existente y respalda la instalación anterior. La desinstalación desde Aplicaciones de Windows conserva los datos en ProgramData y no elimina el controlador compartido.
+
+## Versión 2.2: indicador junto al reloj
+
+El paquete incluye `ControlRondasIndicador.exe`. Se inicia con la sesión del usuario que instala, sin elevación, mediante una tarea programada. El servicio mantiene su arranque automático independiente de la sesión.
+
+El icono diferencia conexión USB verificada, puerto detectado sin confirmar y desconexión/error. Incluye notificaciones, sonido configurable y detalle de última descarga y envío. El instalador actualiza y respalda el programa anterior conservando SQLite; desactivar este PC también deshabilita el indicador.
+
+`-PrepareOnly` verifica los dos ejecutables, datos y conexión en una carpeta aislada; no registra la tarea ni cambia el servicio real. La instalación completa debe ejecutarse en el PC que utilizará el USB.

@@ -11,7 +11,7 @@ Interfaz en GitHub Pages, datos autenticados en Supabase y auxiliar Windows para
 
 ## Descarga independiente de la web
 
-El auxiliar Windows consulta el lector cada 30 segundos, guarda primero en SQLite y envía a Supabase. Funciona con el navegador cerrado. El PC debe estar encendido y el lector conectado por USB. La instalación del servicio ControlRondasJWM permite arrancar con Windows sin iniciar sesión, bajo LocalService, con reinicio automático ante fallos. El instalador respalda el arranque anterior y copia SQLite de forma consistente a ProgramData. Si falta internet, conserva los registros y reintenta. No borra el lector ni cambia su reloj.
+El auxiliar Windows detecta cambios de conexión USB cada segundo y consulta el lector periódicamente cada 30 segundos, guarda primero en SQLite y envía a Supabase. Funciona con el navegador cerrado. El PC debe estar encendido y el lector conectado por USB. La instalación del servicio ControlRondasJWM permite arrancar con Windows sin iniciar sesión, bajo LocalService, con reinicio automático ante fallos. El instalador respalda el arranque anterior y copia SQLite de forma consistente a ProgramData. Si falta internet, conserva los registros y reintenta. No borra el lector ni cambia su reloj.
 
 Las nuevas marcaciones se consultan desde cualquier dispositivo con internet y una cuenta autorizada; el lector solo debe conectarse al PC que ejecuta el auxiliar. Registrar un lector en la interfaz no provisiona su credencial de envío: esa vinculación se administra en el backend.
 
@@ -41,3 +41,5 @@ El ejecutable se construye con PyInstaller y los módulos de `windows/`. Instala
 Pruebas del auxiliar: `python -m unittest discover -s windows -p test_recovery.py -v` con pyserial y tzdata instalados. Pruebas web: `node --test test/*.test.cjs`. Las pruebas de cortes de internet/USB son simuladas sobre una base temporal, sin desactivar la red ni los dispositivos del PC.
 
 Construcción reproducible: instalar `windows/requirements-build.txt` y ejecutar `windows/Construir.ps1 -Python <ruta-python> -Destination <carpeta-salida>`. El script incluye los datos TLS requeridos por el runtime cuando existen y comprueba que el ejecutable crea un contexto TLS válido antes de instalar. El instalador rechaza paquetes que no pasan esa prueba.
+
+El instalador 2.2 integra un indicador junto al reloj: verde cuando el lector responde, amarillo durante la comprobación y rojo ante desconexión o error. Incluye avisos y sonido, sin depender de la web. Ver `windows/indicador/README.md`.

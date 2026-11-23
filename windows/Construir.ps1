@@ -13,3 +13,5 @@ $buildArgs+=(Join-Path $PSScriptRoot 'auxiliar.py')
 if ($LASTEXITCODE -ne 0) { throw 'Falló la construcción del ejecutable' }
 & (Join-Path $Destination 'ControlRondas\ControlRondas.exe') --check-tls
 if ($LASTEXITCODE -ne 0) { throw 'El ejecutable no pasó la comprobación TLS' }
+
+& (Join-Path $PSScriptRoot 'indicador\Construir.ps1') -Destination (Join-Path $Destination 'ControlRondas')

@@ -68,7 +68,7 @@ internal sealed class SetupForm:Form {
         top.Controls.Add(new Label{Text="Brown Norte  ·  Lector 5561",Location=new Point(30,56),Size=new Size(650,24),ForeColor=Color.FromArgb(130,218,210)});
         Controls.Add(top);
         Controls.Add(new Label{Text="Todo listo para el computador del lector",Location=new Point(28,114),Size=new Size(660,30),Font=new Font("Segoe UI",14,FontStyle.Bold)});
-        Controls.Add(new Label{Text="Instala el programa, el controlador USB y la conexión con la nube.\r\nSe iniciará automáticamente con Windows, sin abrir la web ni instalar Python.",Location=new Point(28,155),Size=new Size(660,58)});
+        Controls.Add(new Label{Text="Instala el programa, el indicador junto al reloj, el USB y la conexión con la nube.\r\nSe iniciará automáticamente con Windows, sin abrir la web ni instalar Python.",Location=new Point(28,155),Size=new Size(660,58)});
         Controls.Add(new Label{Text="Uso exclusivo de Brown Norte. Este instalador contiene la conexión del lector; guárdalo de forma privada.",Location=new Point(28,216),Size=new Size(660,40),ForeColor=Color.FromArgb(90,105,115),Font=new Font("Segoe UI",9)});
         accept.Text="Acepto la licencia del controlador Silicon Labs"; accept.Location=new Point(28,265); accept.Size=new Size(495,26);
         license.Text="Ver licencia"; license.Location=new Point(550,269); license.Size=new Size(130,25);
@@ -136,7 +136,7 @@ internal sealed class SetupForm:Form {
                         throw new InvalidOperationException(detail??"No se completó la instalación. Revisa C:\\ProgramData\\Control de Rondas\\instalacion.log.");}
                 }
             });
-            progress.Value=100;message.Text="Listo. Conecta el lector por USB y mantén este PC encendido. Las lecturas se enviarán automáticamente cuando haya internet.";
+            progress.Value=100;message.Text="Listo. Conecta el lector y revisa el indicador junto al reloj: verde confirma que el equipo respondió. Las lecturas se envían sin abrir la web.";
             string result=File.ReadAllText(Path.Combine(stage,"resultado.json"));
             if(System.Text.RegularExpressions.Regex.IsMatch(result,"\"rebootRequired\"\\s*:\\s*true",System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 message.Text+=" Reinicia Windows para terminar de activar el controlador.";
