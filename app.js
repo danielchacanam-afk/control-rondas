@@ -112,13 +112,12 @@ const getWindow=(date,s)=>{
  if(en<st)en=addDays(date,(s.offset||0)+1)+'T'+s.end+':00';
  return {start:st,end:en};
 };
-const OUTSIDE_ROUND_MINUTES=120;
 const readingKey=r=>[r.device||'',r.timestamp,String(r.code).toUpperCase()].join('|');
 function shiftKey(timestamp){
- const date=timestamp.slice(0,10),time=timestamp.slice(11,19);
- if(time>='08:00:00'&&time<'15:00:00')return date+' morning';
- if(time>='15:00:00'&&time<='22:00:00')return date+' afternoon';
- return (time<'08:00:00'?addDays(date,-1):date)+' night';
+ const date=timestamp.slice(0,10),time=timestamp.slice(11,16);
+ if(time>='08:00'&&time<='15:00')return date+' morning';
+ if(time>='15:01'&&time<='22:00')return date+' afternoon';
+ return (time<'08:00'?addDays(date,-1):date)+' night';
 }
 function dailyOccurrence(date,s){
  s=resolveSchedule(s,addDays(date,s.offset||0));const window=getWindow(date,s),expected=s.required.map(point);
@@ -141,7 +140,7 @@ function assignDailyReadings(occurrences,readings,now){
    const inside=r.timestamp>=o.window.start&&r.timestamp<=o.window.end;
    const distance=inside?0:Math.min(Math.abs(time-Date.parse(o.window.start+'Z')),Math.abs(time-Date.parse(o.window.end+'Z')));
    const sameShift=o.shiftWindow?r.timestamp>=o.shiftWindow.start&&r.timestamp<=o.shiftWindow.end:shiftKey(r.timestamp)===shiftKey(o.window.start);
-   if(!inside&&(!sameShift||distance>OUTSIDE_ROUND_MINUTES*60000))continue;
+   if(!inside&&!sameShift)continue;
    const score=[distance,Math.abs(time-(Date.parse(o.window.start+'Z')+Date.parse(o.window.end+'Z'))/2),o.window.start+'|'+o.s.id];
    if(!bestScore||score[0]<bestScore[0]||(score[0]===bestScore[0]&&(score[1]<bestScore[1]||(score[1]===bestScore[1]&&score[2]<bestScore[2])))){best=o;bestScore=score}
   }
@@ -202,7 +201,7 @@ function filterCalendarEvaluations(evaluations){return !calendarEmployee?evaluat
 function renderCalendar(){const [y,m]=filterDate.split('-').map(Number),first=new Date(y,m-1,1),offset=(first.getDay()+6)%7,days=new Date(y,m,0).getDate(),evaluations=filterCalendarEvaluations(getEvaluations(filterDate));
  const grouped=Object.groupBy?Object.groupBy(evaluations,e=>e.date):evaluations.reduce((acc,e)=>{(acc[e.date]??=[]).push(e);return acc},{});
  const head=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(x=>`<div class="day-header">${x}</div>`).join('');let tiles='';for(let cell=0;cell<Math.ceil((offset+days)/7)*7;cell++){const day=cell-offset+1;if(day<1||day>days){tiles+=`<div class="cal-day outside"></div>`;continue}const dayISO=`${y}-${pad(m)}-${pad(day)}`,es=grouped[dayISO]||[];tiles+=`<div class="cal-day"><div class="day-number">${pad(day)}</div>${es.map(e=>`<div class="calendar-round">${e.s.type==='meters'?'<small>Medidores</small>':''}<span class="calendar-responsible" title="${safe(employee(e.s.employeeId)?.name||'Por asignar')}">${safe(calendarName(e.s.employeeId))}</span> ${evaluationBadge(e)}</div>`).join('')}<button data-action="day-detail" data-day="${dayISO}">Detalle</button></div>`}
- return header('Calendario mensual','Cada casilla muestra las rondas programadas. La lectura de medidores cuenta una vez al mes, durante los últimos 4 días.',`<div class="calendar-filters"><label class="form-field">Conserje<select id="calendar-employee" aria-label="Filtrar calendario por conserje"><option value="">Todos los conserjes</option>${current('employees').map(p=>`<option value="${safe(p.id)}" ${calendarEmployee===p.id?'selected':''}>${safe(p.name)}${p.active?'':' (Archivado)'}</option>`).join('')}<option value="__unassigned" ${calendarEmployee==='__unassigned'?'selected':''}>Por asignar</option></select></label><label class="form-field">Fecha<input aria-label="Seleccionar mes" type="month" id="month-filter" value="${filterDate}"></label><button class="btn" data-action="xlsx" title="Mes actual hasta hoy: una hoja por conserje">Exportar Excel</button></div>`)+banner()+`<section class="panel"><div class="panel-head"><h2>${new Intl.DateTimeFormat('es-CL',{month:'long',year:'numeric'}).format(first)}</h2><span class="muted">${evaluations.length} rondas programadas</span></div><p class="subhead">Cada marca se asigna una sola vez: ronda más cercana del mismo turno, hasta 2 horas antes o después. El detalle muestra los puntos y horas asociados. El Excel incluye el mes actual hasta hoy, con una hoja por conserje.</p><div class="cal-grid">${head}${tiles}</div></section>`;
+ return header('Calendario mensual','Cada casilla muestra las rondas programadas. La lectura de medidores cuenta una vez al mes, durante los últimos 4 días.',`<div class="calendar-filters"><label class="form-field">Conserje<select id="calendar-employee" aria-label="Filtrar calendario por conserje"><option value="">Todos los conserjes</option>${current('employees').map(p=>`<option value="${safe(p.id)}" ${calendarEmployee===p.id?'selected':''}>${safe(p.name)}${p.active?'':' (Archivado)'}</option>`).join('')}<option value="__unassigned" ${calendarEmployee==='__unassigned'?'selected':''}>Por asignar</option></select></label><label class="form-field">Fecha<input aria-label="Seleccionar mes" type="month" id="month-filter" value="${filterDate}"></label><button class="btn" data-action="xlsx" title="Mes actual hasta hoy: una hoja por conserje">Exportar Excel</button></div>`)+banner()+`<section class="panel"><div class="panel-head"><h2>${new Intl.DateTimeFormat('es-CL',{month:'long',year:'numeric'}).format(first)}</h2><span class="muted">${evaluations.length} rondas programadas</span></div><p class="subhead">Cada marca se asigna una sola vez: ronda más cercana dentro del turno completo: mañana 08:00–15:00, tarde 15:01–22:00 y noche 22:01–07:59. Las jornadas propias configuradas se respetan. El detalle muestra los puntos y horas asociados. El Excel incluye el mes actual hasta hoy, con una hoja por conserje.</p><div class="cal-grid">${head}${tiles}</div></section>`;
 }
 function renderPeople(){const list=current('employees');const rows=list.map(e=>`<tr><td class="value-strong">${safe(e.name)}</td><td>${e.active?'<span class="chip ok">Activo</span>':'<span class="chip pending">Archivado</span>'}</td><td><button class="btn small" data-action="edit-person" data-id="${e.id}">Editar</button> <button class="btn small" data-action="toggle-person" data-id="${e.id}">${e.active?'Archivar':'Reactivar'}</button></td></tr>`).join('');return `<div class="panel-head"><h2>Conserjes</h2><button class="btn primary" data-action="add-person">+ Agregar conserje</button><span class="muted">${list.filter(x=>x.active).length} activos</span></div>${panelTable(['Nombre completo','Estado','Acciones'],rows)}`}
 function roundPeriod(s){

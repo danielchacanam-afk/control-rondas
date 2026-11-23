@@ -24,11 +24,15 @@ test('siete puntos antes de la primera ronda nocturna completan solo esa ronda',
 test('repetir el mismo punto no completa los siete puntos obligatorios',()=>{
  const t=setup([log('2026-11-19T10:05:00'),log('2026-11-19T10:06:00')]);assert.equal(t.result('2026-11-19','am').count,1);assert.equal(t.result('2026-11-19','am').status,'incomplete');assert.equal(t.result('2026-11-19','am').timing,'inside');
 });
-test('una lectura en otro turno o a más de dos horas no se asocia',()=>{
- const t=setup([log('2026-11-19T14:00:00'),log('2026-11-19T16:57:00'),log('2026-11-19T17:56:00')]);assert.equal(t.result('2026-11-19','am').count,0);assert.equal(t.result('2026-11-19','pm').count,0);
+test('las marcas de todo el turno cuentan aunque estén a más de dos horas de la ronda',()=>{
+ const t=setup([log('2026-11-19T14:00:00'),log('2026-11-19T16:57:00'),log('2026-11-19T17:56:00')]);assert.equal(t.result('2026-11-19','am').count,1);assert.equal(t.result('2026-11-19','pm').count,1);assert.equal(t.result('2026-11-19','pm').logs.length,2);
 });
-test('el límite de dos horas admite exactamente el extremo',()=>{
- const t=setup([log('2026-11-19T12:30:00'),log('2026-11-19T12:30:01','P1')]);assert.equal(t.result('2026-11-19','am').count,1);
+test('las seis marcas de las 12:54 producen incompleta fuera de horario 6/7',()=>{
+ const t=setup(Array.from({length:6},(_,i)=>log('2026-11-23T12:54:00','P'+i)));t.c.now='2026-11-23T14:00:00';const e=t.result('2026-11-23','am');assert.equal(e.count,6);assert.equal(e.status,'incomplete');assert.equal(e.timing,'outside');assert.equal(t.result('2026-11-23','pm').count,0);
+});
+test('los límites de turno no tienen huecos ni comparten marcas, incluida la noche del día anterior',()=>{
+ const t=setup();for(const [time,period] of [['07:59:59','night'],['08:00:00','morning'],['15:00:00','morning'],['15:00:59','morning'],['15:01:00','afternoon'],['22:00:59','afternoon'],['22:01:00','night']])assert.equal(t.run(`shiftKey('2026-11-19T${time}')`),(time<'08:00:00'?'2026-11-18':'2026-11-19')+' '+period);
+ const late=setup([log('2026-11-20T07:59:59')]);assert.equal(late.result('2026-11-19','n2').count,1);assert.equal(late.result('2026-11-20','am').count,0);
 });
 test('las lecturas dentro del horario completan la ronda y no se degradan por una repetición tardía',()=>{
  const t=setup([...Array.from({length:7},(_,i)=>log('2026-11-19T10:10:00','P'+i)),log('2026-11-19T11:00:00')]);assert.equal(t.result('2026-11-19','am').status,'ok');assert.equal(t.result('2026-11-19','am').timing,'inside');
