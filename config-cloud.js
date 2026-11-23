@@ -89,6 +89,7 @@ async function configRefresh(buildings, generation) {
       continue;
     }
     if ((configBases[row.edificio]?.revision || 0) > row.revision) continue;
+    if (configBases[row.edificio]?.revision === row.revision && !configDrafts[row.edificio]) continue;
     // No reemplazar un formulario que el usuario tiene abierto.
     if (document.getElementById('modal')?.open) continue;
     configBases[row.edificio] = { revision: row.revision, data: row.datos };
