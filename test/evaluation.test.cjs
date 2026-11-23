@@ -8,11 +8,22 @@ function setup(readings=[],schedules){
  return {c,run:s=>vm.runInContext(s,c),result:(date,id)=>vm.runInContext(`getEvaluations(month).find(e=>e.date==='${date}'&&e.s.id==='${id}')`,c)};
 }
 const log=(timestamp,code='P0')=>({timestamp,code,device:'reader'});
-test('las jornadas importadas delimitan las marcas fuera de horario sin alterar la ventana explícita',()=>{
+test('Baburizza usa sus jornadas de semana, sábado y domingo con cierre nocturno al día siguiente',()=>{
+ const defs=[['weekday','07:00','15:00','15:01','21:00','21:01','06:00'],['saturday','07:00','15:00','15:01','21:00','21:01','08:00'],['sunday','08:00','20:00','08:00','20:00','20:00','06:59']];
+ const schedules=defs.flatMap(([type,amStart,amEnd,pmStart,pmEnd,nightStart,nightEnd])=>[
+  {id:type+'-am',type,start:'10:15',end:'11:15',shiftStart:amStart,shiftEnd:amEnd,offset:0,shiftEndOffset:0},
+  {id:type+'-pm',type,start:type==='sunday'?'16:45':'20:15',end:type==='sunday'?'17:45':'21:15',shiftStart:pmStart,shiftEnd:pmEnd,offset:0,shiftEndOffset:0},
+  {id:type+'-n1',type,start:'02:45',end:'03:45',shiftStart:nightStart,shiftEnd:nightEnd,offset:1,shiftEndOffset:1},
+  {id:type+'-n2',type,start:'04:45',end:'05:45',shiftStart:nightStart,shiftEnd:nightEnd,offset:1,shiftEndOffset:1}
+ ].map(s=>({...s,required:['P0'],active:true,employeeId:'person'})));
+ const t=setup([],schedules);t.c.now='2026-12-02T00:00:00';
+ for(const [stamp,date,id,count] of [['2026-11-19T07:00:00','2026-11-19','weekday-am',1],['2026-11-19T15:00:59','2026-11-19','weekday-am',1],['2026-11-19T15:01:00','2026-11-19','weekday-pm',1],['2026-11-19T21:01:00','2026-11-19','weekday-pm',0],['2026-11-20T06:00:59','2026-11-19','weekday-n2',1],['2026-11-20T06:01:00','2026-11-19','weekday-n2',0],['2026-11-22T07:59:59','2026-11-21','saturday-n2',1],['2026-11-23T06:59:59','2026-11-22','sunday-n2',1],['2026-11-23T07:00:00','2026-11-22','sunday-n2',0]]){t.c.readings=[log(stamp)];assert.equal(t.result(date,id).count,count,stamp+' '+id);assert(t.run('getEvaluations(month).reduce((n,e)=>n+e.count,0)')<=1);}
+});
+test('las jornadas propias delimitan todas las marcas incluso si una ventana de ronda supera el fin del turno',()=>{
  const base={id:'custom',type:'weekday',offset:0,required:['P0'],employeeId:'person',active:true,start:'09:00',end:'09:30',shiftStart:'07:00',shiftEnd:'15:00',shiftEndOffset:0};
  const t=setup([log('2026-11-19T07:15:00')],[base]);assert.equal(t.result('2026-11-19','custom').count,1);
  t.c.schedules=[{...base,start:'04:45',end:'05:45',offset:1,shiftStart:'21:00',shiftEnd:'06:00',shiftEndOffset:1}];t.c.readings=[log('2026-11-20T06:30:00')];assert.equal(t.result('2026-11-19','custom').count,0);
- t.c.schedules=[{...base,start:'20:15',end:'21:15',shiftStart:'15:00',shiftEnd:'21:00'}];t.c.readings=[log('2026-11-19T21:10:00')];assert.equal(t.result('2026-11-19','custom').count,1);
+ t.c.schedules=[{...base,start:'20:15',end:'21:15',shiftStart:'15:01',shiftEnd:'21:00'}];t.c.readings=[log('2026-11-19T21:10:00')];assert.equal(t.result('2026-11-19','custom').count,0);
 });
 test('un punto tardío produce incompleta fuera de horario y no afecta días vecinos ni tarde',()=>{
  const t=setup([log('2026-11-19T11:40:00')]);const e=t.result('2026-11-19','am');assert.equal(e.status,'incomplete');assert.equal(e.count,1);assert.equal(e.timing,'outside');assert.equal(e.missing.length,6);

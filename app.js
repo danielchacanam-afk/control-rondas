@@ -121,8 +121,8 @@ function shiftKey(timestamp){
 }
 function dailyOccurrence(date,s){
  s=resolveSchedule(s,addDays(date,s.offset||0));const window=getWindow(date,s),expected=s.required.map(point);
- const shiftWindow=s.shiftStart&&s.shiftEnd?{start:date+'T'+s.shiftStart+':00',end:addDays(date,s.shiftEndOffset||0)+'T'+s.shiftEnd+':00'}:null;
- if(shiftWindow&&shiftWindow.end<shiftWindow.start)shiftWindow.end=addDays(date,(s.shiftEndOffset||0)+1)+'T'+s.shiftEnd+':00';
+ const shiftWindow=s.shiftStart&&s.shiftEnd?{start:date+'T'+s.shiftStart+':00',end:addDays(date,s.shiftEndOffset||0)+'T'+s.shiftEnd+':59'}:null;
+ if(shiftWindow&&shiftWindow.end<shiftWindow.start)shiftWindow.end=addDays(date,(s.shiftEndOffset||0)+1)+'T'+s.shiftEnd+':59';
  return {date,s,window,shiftWindow,expected,valid:expected.length>0&&expected.every(p=>p&&p.active&&p.code.trim()!==''),logs:[]};
 }
 function dailyOccurrences(from,to){
@@ -140,7 +140,7 @@ function assignDailyReadings(occurrences,readings,now){
    const inside=r.timestamp>=o.window.start&&r.timestamp<=o.window.end;
    const distance=inside?0:Math.min(Math.abs(time-Date.parse(o.window.start+'Z')),Math.abs(time-Date.parse(o.window.end+'Z')));
    const sameShift=o.shiftWindow?r.timestamp>=o.shiftWindow.start&&r.timestamp<=o.shiftWindow.end:shiftKey(r.timestamp)===shiftKey(o.window.start);
-   if(!inside&&!sameShift)continue;
+   if(!sameShift)continue;
    const score=[distance,Math.abs(time-(Date.parse(o.window.start+'Z')+Date.parse(o.window.end+'Z'))/2),o.window.start+'|'+o.s.id];
    if(!bestScore||score[0]<bestScore[0]||(score[0]===bestScore[0]&&(score[1]<bestScore[1]||(score[1]===bestScore[1]&&score[2]<bestScore[2])))){best=o;bestScore=score}
   }
